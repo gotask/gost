@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"bufio"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -73,6 +75,11 @@ func SSHScp2Remote(client *ssh.Client, localFile string, remotePathOrFile string
 	}
 	defer session.Close()
 
+	writer, err := session.StdinPipe()
+	if err != nil {
+		return err
+	}
+
 	file, err := os.Open(localFile)
 	if err != nil {
 		return err
@@ -80,7 +87,7 @@ func SSHScp2Remote(client *ssh.Client, localFile string, remotePathOrFile string
 	info, _ := file.Stat()
 	defer file.Close()
 
-	err = session.Run(fmt.Sprintf("/usr/bin/scp -qrt %s", remotePathOrFile))
+	err = session.Start(fmt.Sprintf("/usr/bin/scp -qrt %s", remotePathOrFile))
 	if err != nil {
 		return err
 	}
@@ -89,7 +96,6 @@ func SSHScp2Remote(client *ssh.Client, localFile string, remotePathOrFile string
 	wg.Add(1)
 
 	go func() {
-		writer, _ := session.StdinPipe()
 		fmt.Fprintln(writer, "C0644", info.Size(), filepath.Base(localFile))
 		//io.CopyN(writer, file, info.Size())
 
@@ -132,7 +138,6 @@ func SSHScp2Remote(client *ssh.Client, localFile string, remotePathOrFile string
 	}()
 
 	wg.Wait()
-
 	e := session.Wait()
 	if e != nil && err != nil {
 		return fmt.Errorf("%s;%s", err.Error(), e.Error())
@@ -178,20 +183,31 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 
 		successfulByte := []byte{0}
 
+		//use a scanner for processing individual commands, but not files themselves
+		scanner := bufio.NewScanner(reader)
+
+	NEXT:
 		// Send a null byte saying that we are ready to receive the data
 		writer.Write(successfulByte)
 
-	NEXT:
-		// We want to first receive the command input from remote machine
-		// e.g. C0644 113828 test.csv
-		scpCommandArray := make([]byte, 100)
-		var bytesRead int
-		bytesRead, err = reader.Read(scpCommandArray)
-		if err != nil /*&& err != io.EOF*/ {
+		scanner.Scan()
+		err = scanner.Err()
+		if err != nil {
+			return
+		}
+		//first line
+		scpStartLine := scanner.Text()
+
+		if scpStartLine == "" {
 			return
 		}
 
-		scpStartLine := string(scpCommandArray[:bytesRead])
+		// We want to first receive the command input from remote machine
+		// e.g. C0644 113828 test.csv
+		if scpStartLine[0] == 0x1 {
+			goto NEXT //scp: xxx: not a regular file
+		}
+
 		scpStartLineArray := strings.Split(scpStartLine, " ")
 
 		if len(scpStartLineArray) != 3 {
@@ -199,26 +215,19 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 			return
 		}
 
-		//fmt.Println("bytesRead:", bytesRead, scpStartLine)
-
-		filePermission := scpStartLineArray[0]
+		//filePermission := scpStartLineArray[0]
 		fileSize := scpStartLineArray[1]
 		fileName := scpStartLineArray[2]
 		fileName = strings.Replace(fileName, "\n", "", -1)
 
 		fileS, _ := strconv.Atoi(fileSize)
 
-		if !isValidPermission(filePermission) {
-			err = fmt.Errorf(scpStartLine)
-			return
-		}
-
 		//fmt.Println("File with permissions: %s, File Size: %s, File Name: %s", filePermission, fileSize, fileName)
 
 		// Confirm to the remote host that we have received the command line
 		writer.Write(successfulByte)
 		// Now we want to start receiving the file itself from the remote machine
-		fileContents := make([]byte, 32*1024)
+
 		var file *os.File
 		file, err = FileCreate(localFilePath + fileName)
 		if err != nil {
@@ -226,7 +235,14 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 		}
 		more := true
 		var written int
+		var bytesRead int
 		for more {
+			need := fileS - written
+			bufSize := 32 * 1024
+			if need < bufSize {
+				bufSize = need
+			}
+			fileContents := make([]byte, bufSize)
 			bytesRead, err = reader.Read(fileContents)
 			if err != nil {
 				if err == io.EOF {
@@ -235,10 +251,13 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 					return
 				}
 			}
-			file.Write(fileContents[:bytesRead])
-			writer.Write(successfulByte)
+			writeLen := bytesRead
+			if writeLen > need {
+				writeLen = need
+			}
+			file.Write(fileContents[:writeLen])
 
-			written = written + bytesRead
+			written = written + writeLen
 
 			select {
 			case process <- float32(written) / float32(fileS):
@@ -246,12 +265,20 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 			}
 
 			if written == fileS {
-				//read end
-				bytesRead, err = reader.Read(fileContents)
+				//close file writer & check error
+				err = file.Close()
+				if err != nil {
+					return
+				}
+				//get next byte from channel reader
+				nb := make([]byte, 1)
+				_, err = reader.Read(nb)
+				if err != nil {
+					return
+				}
 				goto NEXT
 			}
 		}
-		err = file.Sync()
 	}(writer, reader, &wg)
 
 	wg.Wait()
@@ -264,23 +291,4 @@ func SSHScp2Local(client *ssh.Client, remoteFile string, localFilePath string, p
 		return e
 	}
 	return
-}
-
-func isValidPermission(per string) bool {
-	if !strings.HasPrefix(per, "C0") || len(per) != 5 {
-		return false
-	}
-	s := per[2:3] //1 2 4
-	if s < "1" || s > "7" {
-		return false
-	}
-	s = per[3:4] //1 2 4
-	if s < "1" || s > "7" {
-		return false
-	}
-	s = per[4:] //1 2 4
-	if s < "1" || s > "7" {
-		return false
-	}
-	return true
 }
