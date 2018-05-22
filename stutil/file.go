@@ -76,6 +76,11 @@ func FileIsExist(path string) bool {
 	return err == nil || os.IsExist(err)
 }
 
+//make dir
+func FileMakeDir(path string) error {
+	return os.MkdirAll(path, os.ModePerm)
+}
+
 //create file
 func FileCreate(file string) (*os.File, error) {
 	d, f := path.Split(file)
@@ -88,7 +93,6 @@ func FileCreate(file string) (*os.File, error) {
 			return nil, err
 		}
 	}
-
 	return os.Create(file)
 }
 
