@@ -1,10 +1,12 @@
-package stnet
+package sdp
 
 import (
 	"errors"
 	"fmt"
 	"reflect"
 	"time"
+
+	. "github.com/gotask/gost/stnet"
 )
 
 const (
@@ -26,6 +28,10 @@ var (
 	ErrNoCallbackFunc = errors.New("no callback function or exception function")
 	ErrNoRpcFunc      = errors.New("no rpc function")
 	ErrRpcRspTimeOut  = errors.New("receive rsp but timeout")
+)
+
+var (
+	TimeOut int64 = 5 //sec
 )
 
 type RequestPacket struct {
@@ -115,7 +121,7 @@ func (rpc *RPC) SyncCall(funcName string, params ...interface{}) error {
 }
 
 func (rpc *RPC) synccall(rpcReq rpcRequest, params ...interface{}) error {
-	rpcReq.timeout = time.Now().Unix() + 5
+	rpcReq.timeout = time.Now().Unix() + TimeOut
 	rpcReq.req.ServiceName = rpc.ServiceName
 	rpcReq.req.RequestId = rpc.ReqSequence
 
@@ -128,23 +134,15 @@ func (rpc *RPC) synccall(rpcReq rpcRequest, params ...interface{}) error {
 	}
 	rpcReq.req.ReqPayload = string(sdp.buf)
 
-	rpc.imp.(*RPCImp).pushRequest(rpcReq)
+	rpc.Imp().(*RPCImp).pushRequest(rpcReq)
 	rpc.ReqSequence++
 
 	return rpc.Send(PackSdpProtocol(Encode(rpcReq.req)))
 }
 
-func newRPC(name, servicename, address string) (*RPC, error) {
-	rpcimp := &RPCImp{}
-	ct, err := newConnect(name, address, 100, rpcimp)
-	if err != nil {
-		return nil, err
-	}
-	return &RPC{ct, rpcimp, servicename, 1}, nil
-}
-
 type RPCImp struct {
 	requests map[uint32]rpcRequest
+	conn     *Connect
 }
 
 func (rpc *RPCImp) pushRequest(req rpcRequest) bool {
@@ -161,7 +159,11 @@ func (rpc *RPCImp) Loop() {
 	for k, v := range rpc.requests {
 		if v.timeout < now {
 			if v.exception != nil {
-				v.exception(SDPASYNCCALLTIMEOUT)
+				if !rpc.conn.IsConnected() {
+					v.exception(SDPPROXYCONNECTERR)
+				} else {
+					v.exception(SDPASYNCCALLTIMEOUT)
+				}
 			}
 			delete(rpc.requests, k)
 		}
@@ -257,6 +259,12 @@ func (rpc *RPCServerImp) RegisterSMessage(s *Service) {
 }
 func (rpc *RPCServerImp) HandleRpcRequest(s *Session, i interface{}) {
 	req := i.(*RequestPacket)
+	now := time.Now().Unix()
+	if req.Timeout < uint32(now) {
+		rpc.SendResponse(s, req, SDPSERVERQUEUETIMEOUT, "")
+		rpc.HandleError(s, fmt.Errorf("server queue timeout"))
+		return
+	}
 
 	m, ok := reflect.TypeOf(rpc.rpcFuncs).MethodByName(req.FuncName)
 	if !ok {
@@ -319,6 +327,7 @@ func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed int, m
 	if e != nil {
 		return int(msgLen), 0, nil, e
 	}
+	req.Timeout = uint32(time.Now().Unix() + TimeOut)
 	return int(msgLen), 0, req, nil
 }
 func (rpc *RPCServerImp) SessionOpen(sess *Session) {

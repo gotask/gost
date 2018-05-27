@@ -43,16 +43,6 @@ func (svr *Server) AddService(name, address string, imp ServiceImp, threadId int
 	return s, e
 }
 
-func (svr *Server) AddRpcService(name, address string, rpcFuncStruct interface{}, threadId int) (*Service, error) {
-	rpcImp := &RPCServerImp{rpcFuncStruct}
-	s, e := newService(name, address, rpcImp)
-	if e != nil {
-		return nil, e
-	}
-	svr.services[threadId] = append(svr.services[threadId], s)
-	return s, e
-}
-
 func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ConnectImp, threadId int) (*Connect, error) {
 	c, e := newConnect(name, address, reconnectmsec, imp)
 	if e != nil {
@@ -69,16 +59,6 @@ func (svr *Server) AddConnectNoStart(name, address string, reconnectmsec int, im
 	}
 	svr.connects[threadId] = append(svr.connects[threadId], c)
 	return c, e
-}
-
-func (svr *Server) AddRpcClient(name, servicename, address string, threadId int) (*RPC, error) {
-	r, e := newRPC(name, servicename, address)
-	if e != nil {
-		return nil, e
-	}
-	svr.connects[threadId] = append(svr.connects[threadId], r.Connect)
-	svr.AddNullService(name, r.rpcimp, threadId)
-	return r, e
 }
 
 func (svr *Server) Start() error {

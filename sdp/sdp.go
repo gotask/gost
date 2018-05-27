@@ -1,5 +1,5 @@
 // sdp.go
-package stnet
+package sdp
 
 import (
 	"errors"

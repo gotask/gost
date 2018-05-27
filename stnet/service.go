@@ -45,6 +45,10 @@ type sessionMessage struct {
 	Err    error
 }
 
+func (service *Service) Imp() ServiceImp {
+	return service.imp
+}
+
 func (service *Service) loop() {
 	for i := 0; i < 100; i++ {
 		select {
@@ -118,6 +122,10 @@ type Connect struct {
 	imp             ConnectImp
 	messageQ        chan sessionMessage
 	messageHandlers map[uint32]FuncHandleMessage
+}
+
+func (ct *Connect) Imp() ConnectImp {
+	return ct.imp
 }
 
 func (ct *Connect) loop() {
