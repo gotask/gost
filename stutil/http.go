@@ -23,10 +23,9 @@ var (
 
 // DefaultHeaders define default headers
 var DefaultHeaders = map[string]string{
-	"Connection":      "keep-alive",
-	"Accept-Encoding": "gzip, deflate",
-	"Accept":          "*/*",
-	"User-Agent":      "Chrome",
+	"Connection": "keep-alive",
+	"Accept":     "*/*",
+	"User-Agent": "Chrome",
 }
 
 type HttpRequest struct {
@@ -57,6 +56,11 @@ func (req *HttpRequest) Cookie(cookie string) *HttpRequest {
 	return req
 }
 
+func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
+	req.urlValue.Set(k, v)
+	return req
+}
+
 func (req *HttpRequest) Proxy(p string) *HttpRequest {
 	req.proxy = p
 	return req
@@ -73,12 +77,14 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 	}
 
 	if resp != nil {
+		body, err = ioutil.ReadAll(resp.Body)
 		//response.Close = true
 		defer resp.Body.Close()
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	// Read output
-	body, err = ioutil.ReadAll(resp.Body)
 	return
 }
 
