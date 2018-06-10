@@ -2,6 +2,7 @@ package stutil
 
 import (
 	"bytes"
+	"crypto/tls"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -63,6 +64,14 @@ func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
 
 func (req *HttpRequest) Proxy(p string) *HttpRequest {
 	req.proxy = p
+	return req
+}
+
+func (req *HttpRequest) SkipVerify() *HttpRequest {
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	req.client = &http.Client{Transport: tr}
 	return req
 }
 
