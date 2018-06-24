@@ -200,3 +200,71 @@ func FileIterateDir(path, filter string, callback func(file string) bool) error 
 
 	return err
 }
+
+func FileStdinHasData() bool {
+	stat, statErr := os.Stdin.Stat()
+
+	if statErr != nil {
+		return false
+	}
+
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
+type STFile struct {
+	path string
+	file *os.File
+	buf  *bufio.Reader
+	line int
+}
+
+func NewSTFile(path string) (*STFile, error) {
+	var fp *os.File
+	var err error
+
+	if path == "stdin" {
+		fp = os.Stdin
+		err = nil
+	} else if path == "stdout" {
+		fp = os.Stdout
+		err = nil
+	} else {
+		fp, err = os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &STFile{path, fp, bufio.NewReader(fp), 0}, nil
+}
+
+func (f *STFile) ReadLine() (string, int) {
+	if f.file == nil {
+		return "", -1
+	}
+
+	f.line++
+	line, isPrefix, err := f.buf.ReadLine()
+	for isPrefix {
+		var next []byte
+		next, isPrefix, err = f.buf.ReadLine()
+		line = append(line, next...)
+	}
+	if err != nil {
+		f.Close()
+		return "", -1
+	}
+	return string(line), f.line
+}
+
+func (f *STFile) Close() {
+	if f.file == nil {
+		return
+	}
+	f.file.Close()
+	f.file = nil
+}
