@@ -229,9 +229,6 @@ func NewSTFile(path string) (*STFile, error) {
 	if path == "stdin" {
 		fp = os.Stdin
 		err = nil
-	} else if path == "stdout" {
-		fp = os.Stdout
-		err = nil
 	} else {
 		fp, err = os.Open(path)
 		if err != nil {
@@ -255,7 +252,6 @@ func (f *STFile) ReadLine() (string, int) {
 		line = append(line, next...)
 	}
 	if err != nil {
-		f.Close()
 		return "", -1
 	}
 	return string(line), f.line
