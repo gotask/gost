@@ -34,7 +34,8 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 	}
 
 	go func() {
-		for {
+		lis.waitExit.Add(1)
+		for !lis.isclose {
 			conn, err := lis.lst.Accept()
 			if err != nil {
 				break
@@ -51,7 +52,7 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 			lis.sessMap[sess.id] = sess
 			lis.sessMapMutex.Unlock()
 		}
-		lis.Close()
+		lis.waitExit.Done()
 	}()
 	return lis, nil
 }

@@ -52,15 +52,6 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Conne
 	return c, e
 }
 
-func (svr *Server) AddConnectNoStart(name, address string, reconnectmsec int, imp ConnectImp, threadId int) (*Connect, error) {
-	c, e := newConnectNoStart(name, address, reconnectmsec, imp)
-	if e != nil {
-		return nil, e
-	}
-	svr.connects[threadId] = append(svr.connects[threadId], c)
-	return c, e
-}
-
 func (svr *Server) Start() error {
 	for _, v := range svr.services {
 		for _, s := range v {
@@ -144,9 +135,19 @@ func (svr *Server) Start() error {
 }
 
 func (svr *Server) Stop() {
-	if !atomic.CompareAndSwapUint32(&svr.isclose, 0, 1) {
-		return
+	//stop network
+	for _, v := range svr.services {
+		for _, s := range v {
+			s.destroy()
+		}
 	}
+	for _, v := range svr.connects {
+		for _, c := range v {
+			c.destroy()
+		}
+	}
+	//stop logic work
+	atomic.CompareAndSwapUint32(&svr.isclose, 0, 1)
 	svr.wg.Wait()
 	for _, v := range svr.services {
 		for _, s := range v {

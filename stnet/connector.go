@@ -17,7 +17,7 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse, UserData interface{}) (*Connector, error) {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connector, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -31,30 +31,9 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse, UserData
 
 	conn.Session, _ = newConnSession(msgparse, func(*Session) {
 		conn.sessCloseSignal <- 1
-	}, UserData)
+	})
 
 	go conn.connect()
-
-	return conn, nil
-}
-
-func NewConnectorNoStart(address string, reconnectmsec int, msgparse MsgParse, UserData interface{}) (*Connector, error) {
-	if msgparse == nil {
-		return nil, ErrMsgParseNil
-	}
-
-	conn := &Connector{
-		sessCloseSignal: make(chan int, 1),
-		address:         address,
-		reconnectMSec:   reconnectmsec,
-		wg:              &sync.WaitGroup{},
-	}
-
-	conn.isclose = 1
-
-	conn.Session, _ = newConnSession(msgparse, func(*Session) {
-		conn.sessCloseSignal <- 1
-	}, UserData)
 
 	return conn, nil
 }
@@ -64,6 +43,7 @@ func (conn *Connector) connect() {
 	for !conn.closeflag {
 		cn, err := net.Dial("tcp", conn.address)
 		if err != nil {
+			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
 			if conn.reconnectMSec <= 0 {
 				break
 			}

@@ -15,6 +15,7 @@ const (
 	Data CMDType = 0 + iota
 	Open
 	Close
+	System
 )
 
 var (
@@ -52,8 +53,7 @@ const (
 var GlobalSessionID uint64
 
 type Session struct {
-	MsgParse
-
+	parser  MsgParse
 	id      uint64
 	socket  net.Conn
 	writer  chan []byte
@@ -71,14 +71,14 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session,
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:       atomic.AddUint64(&GlobalSessionID, 1),
-		socket:   con,
-		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:   make(chan []byte, RecvListLen),
-		closer:   make(chan int),
-		wg:       &sync.WaitGroup{},
-		MsgParse: msgparse,
-		onclose:  onclose,
+		id:      atomic.AddUint64(&GlobalSessionID, 1),
+		socket:  con,
+		writer:  make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:  make(chan []byte, RecvListLen),
+		closer:  make(chan int),
+		wg:      &sync.WaitGroup{},
+		parser:  msgparse,
+		onclose: onclose,
 	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
@@ -87,22 +87,19 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session,
 	return sess, nil
 }
 
-func newConnSession(msgparse MsgParse, onclose FuncOnClose, UserData interface{}) (*Session, error) {
+func newConnSession(msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:       atomic.AddUint64(&GlobalSessionID, 1),
-		writer:   make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:   make(chan []byte, RecvListLen),
-		closer:   make(chan int),
-		wg:       &sync.WaitGroup{},
-		MsgParse: msgparse,
-		onclose:  onclose,
-		UserData: UserData,
+		id:      atomic.AddUint64(&GlobalSessionID, 1),
+		writer:  make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:  make(chan []byte, RecvListLen),
+		wg:      &sync.WaitGroup{},
+		parser:  msgparse,
+		onclose: onclose,
+		isclose: 1,
 	}
-	close(sess.closer)
-	sess.isclose = 1
 	return sess, nil
 }
 
@@ -125,34 +122,42 @@ func (s *Session) GetID() uint64 {
 func (s *Session) Send(data []byte) error {
 	msg := bp.Alloc(len(data))
 	copy(msg, data)
-	for {
-		select {
-		case <-s.closer:
-			return ErrSocketClosed
-		case s.writer <- msg:
-			return nil
-		case <-time.After(100 * time.Millisecond):
-			return ErrSendOverTime
-		}
+
+	to := time.NewTimer(100 * time.Millisecond)
+	select {
+	case <-s.closer:
+		to.Stop()
+		return ErrSocketClosed
+	case s.writer <- msg:
+		to.Stop()
+		return nil
+	case <-to.C:
+		to.Stop()
+		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
+		return ErrSendOverTime
 	}
 }
 
 func (s *Session) AsyncSend(data []byte) error {
 	msg := bp.Alloc(len(data))
 	copy(msg, data)
-	for {
-		select {
-		case <-s.closer:
-			return ErrSocketClosed
-		case s.writer <- msg:
-			return nil
-		default:
-			return ErrSendBuffIsFull
-		}
+
+	select {
+	case <-s.closer:
+		return ErrSocketClosed
+	case s.writer <- msg:
+		return nil
+	default:
+		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
+		return ErrSendBuffIsFull
 	}
+
 }
 
 func (s *Session) Close() {
+	if s.IsClose() {
+		return
+	}
 	s.socket.Close()
 }
 
@@ -176,18 +181,18 @@ func (s *Session) dosend() {
 }
 
 func (s *Session) dorecv() {
-	s.SessionEvent(s, Open)
+	s.parser.SessionEvent(s, Open)
 
 	msgbuf := bp.Alloc(MsgBuffSize)
 	for {
 		n, err := s.socket.Read(msgbuf)
 		if err != nil {
-			s.SessionEvent(s, Close)
+			s.parser.SessionEvent(s, Close)
 			s.socket.Close()
 			close(s.closer)
 			s.wg.Wait()
-			atomic.AddUint32(&s.isclose, 1)
 			s.onclose(s)
+			atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 			return
 		}
 		s.hander <- msgbuf[0:n]
@@ -212,7 +217,7 @@ func (s *Session) dohand() {
 				buf = append(tempBuf, buf...)
 			}
 		anthorMsg:
-			parseLen := s.ParseMsg(s, buf)
+			parseLen := s.parser.ParseMsg(s, buf)
 			tempBuf = buf[parseLen:]
 			if parseLen >= len(buf) {
 				tempBuf = nil
