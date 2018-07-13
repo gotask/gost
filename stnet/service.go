@@ -18,18 +18,22 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 	for i := 0; i <= msgThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, make(map[uint32]FuncHandleMessage), sync.WaitGroup{}, false}
-	lis, err := NewListener(address, svr)
-	if err != nil {
-		return nil, err
+	svr := &Service{name, nil, imp, msgTh, make(map[uint32]FuncHandleMessage), sync.WaitGroup{}, false, make([]*Connect, 0), sync.Mutex{}}
+
+	if address != "" {
+		lis, err := NewListener(address, svr)
+		if err != nil {
+			return nil, err
+		}
+		svr.listen = lis
 	}
-	svr.listen = lis
+
 	for i := 0; i < msgThreadsNum; i++ {
-		go func() {
+		go func(idx int) {
 			svr.wg.Add(1)
 			for !svr.isClose {
 				select {
-				case msg := <-svr.messageQ[i+1]:
+				case msg := <-svr.messageQ[idx]:
 					if msg.DtType == Data {
 						if handler, ok := svr.messageHandlers[msg.MsgID]; ok {
 							handler(msg.Sess, msg.Msg)
@@ -40,7 +44,7 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 				}
 			}
 			svr.wg.Done()
-		}()
+		}(i + 1)
 	}
 	return svr, nil
 }
@@ -52,11 +56,6 @@ func (service *Service) RegisterMessage(msgID uint32, handler FuncHandleMessage)
 	service.messageHandlers[msgID] = handler
 }
 
-type NullService struct {
-	Name string
-	imp  NullServiceImp
-}
-
 type Service struct {
 	Name            string
 	listen          *Listener
@@ -65,6 +64,8 @@ type Service struct {
 	messageHandlers map[uint32]FuncHandleMessage
 	wg              sync.WaitGroup
 	isClose         bool
+	connects        []*Connect
+	mutex           sync.Mutex
 }
 
 type sessionMessage struct {
@@ -99,13 +100,18 @@ func (service *Service) loop() {
 				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
 			}
 		default:
-			break
+			return
 		}
 	}
 }
 func (service *Service) destroy() {
 	service.isClose = true
-	service.listen.Close()
+	if service.listen != nil {
+		service.listen.Close()
+	}
+	for _, ct := range service.connects {
+		ct.destroy()
+	}
 	for i := 0; i < msgThreadsNum; i++ {
 		select {
 		case service.messageQ[i+1] <- sessionMessage{nil, System, 0, nil, nil}:
@@ -116,6 +122,9 @@ func (service *Service) destroy() {
 }
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	lenParsed, msgid, msg, e := service.imp.Unmarshal(sess, data)
+	if lenParsed == 0 {
+		return 0
+	}
 	th := service.imp.HashHandleThread(sess)
 	if e != nil || th < 0 || th > msgThreadsNum {
 		th = 0
@@ -124,7 +133,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e}:
 	case <-to.C:
-		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d", service.Name, msgid)
+		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
 	to.Stop()
 	return lenParsed
@@ -139,84 +148,23 @@ func (service *Service) SessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func newConnect(name, address string, reconnectmsec int, imp ConnectImp) (*Connect, error) {
-	if imp == nil {
-		return nil, fmt.Errorf("ConnectImp should not be nil")
+func newConnect(service *Service, name, address string, reconnectmsec int) (*Connect, error) {
+	if service == nil {
+		return nil, fmt.Errorf("service should not be nil")
 	}
-	conn := &Connect{nil, name, imp, make(chan sessionMessage, 1024), make(map[uint32]FuncHandleMessage)}
-	ct, err := NewConnector(address, reconnectmsec, conn)
-	if err != nil {
-		return nil, err
-	}
-	conn.Connector = ct
+	conn := &Connect{service, NewConnector(address, reconnectmsec, service), name}
+	service.mutex.Lock()
+	service.connects = append(service.connects, conn)
+	service.mutex.Unlock()
 	return conn, nil
 }
 
-func (ct *Connect) RegisterMessage(msgID uint32, handler FuncHandleMessage) {
-	if handler == nil {
-		return
-	}
-	ct.messageHandlers[msgID] = handler
-}
-
 type Connect struct {
+	*Service
 	*Connector
-	Name            string
-	imp             ConnectImp
-	messageQ        chan sessionMessage
-	messageHandlers map[uint32]FuncHandleMessage
+	Name string
 }
 
-func (ct *Connect) Imp() ConnectImp {
-	return ct.imp
-}
-
-func (ct *Connect) loop() {
-	for i := 0; i < 100; i++ {
-		select {
-		case msg := <-ct.messageQ:
-			if msg.Err != nil {
-				ct.imp.HandleError(msg.Sess, msg.Err)
-			} else if msg.DtType == Open {
-				ct.imp.Connected(msg.Sess)
-			} else if msg.DtType == Close {
-				ct.imp.DisConnected(msg.Sess)
-			} else if msg.DtType == Data {
-				if handler, ok := ct.messageHandlers[msg.MsgID]; ok {
-					handler(msg.Sess, msg.Msg)
-				} else {
-					SysLog.Error("message handler not find;connect=%s;msgid=%d", ct.Name, msg.MsgID)
-				}
-			} else {
-				SysLog.Error("message type not find;connect=%s;msgtype=%d", ct.Name, msg.DtType)
-			}
-		default:
-			break
-		}
-	}
-}
 func (ct *Connect) destroy() {
 	ct.Connector.Close()
-}
-func (ct *Connect) ParseMsg(sess *Session, data []byte) int {
-	lenParsed, msgid, msg, e := ct.imp.Unmarshal(sess, data)
-
-	to := time.NewTimer(time.Second)
-	select {
-	case ct.messageQ <- sessionMessage{sess, Data, msgid, msg, e}:
-	case <-to.C:
-		SysLog.Error("connect recv queue is full and the message is droped;connect=%s;msgid=%d", ct.Name, msgid)
-	}
-	to.Stop()
-
-	return lenParsed
-}
-func (ct *Connect) SessionEvent(sess *Session, cmd CMDType) {
-	to := time.NewTimer(time.Second)
-	select {
-	case ct.messageQ <- sessionMessage{sess, cmd, 0, nil, nil}:
-	case <-to.C:
-		SysLog.Error("connect recv queue is full and the message is droped;connect=%s;msgtype=%d", ct.Name, cmd)
-	}
-	to.Stop()
 }

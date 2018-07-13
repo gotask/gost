@@ -11,11 +11,9 @@ type Server struct {
 	name     string
 	loopmsec uint32
 	//threadid->Services
-	services     map[int][]*Service
-	nullservices map[int][]*NullService
-	connects     map[int][]*Connect
-	wg           sync.WaitGroup
-	isclose      uint32
+	services map[int][]*Service
+	wg       sync.WaitGroup
+	isclose  uint32
 }
 
 func NewServer(name string, loopmsec uint32) *Server {
@@ -23,17 +21,11 @@ func NewServer(name string, loopmsec uint32) *Server {
 	svr.name = name
 	svr.loopmsec = loopmsec
 	svr.services = make(map[int][]*Service)
-	svr.nullservices = make(map[int][]*NullService)
-	svr.connects = make(map[int][]*Connect)
 	return svr
 }
 
-func (svr *Server) AddNullService(name string, imp NullServiceImp, threadId int) *NullService {
-	s := &NullService{name, imp}
-	svr.nullservices[threadId] = append(svr.nullservices[threadId], s)
-	return s
-}
-
+//must be called before server started.
+//address could be null,then you get a service without listen.
 func (svr *Server) AddService(name, address string, imp ServiceImp, threadId int) (*Service, error) {
 	s, e := newService(name, address, imp)
 	if e != nil {
@@ -43,13 +35,26 @@ func (svr *Server) AddService(name, address string, imp ServiceImp, threadId int
 	return s, e
 }
 
-func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ConnectImp, threadId int) (*Connect, error) {
-	c, e := newConnect(name, address, reconnectmsec, imp)
+//must be called before server started.
+func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, threadId int) (*Connect, error) {
+	cs, e := svr.AddService(name, "", imp, threadId)
 	if e != nil {
 		return nil, e
 	}
-	svr.connects[threadId] = append(svr.connects[threadId], c)
-	return c, e
+	ct, err := newConnect(cs, name, address, reconnectmsec)
+	if err != nil {
+		return nil, err
+	}
+	return ct, nil
+}
+
+//can be called when server is running
+func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int) (*Connect, error) {
+	c, e := newConnect(service, name, address, reconnectmsec)
+	if e != nil {
+		return nil, e
+	}
+	return c, nil
 }
 
 func (svr *Server) Start() error {
@@ -58,79 +63,26 @@ func (svr *Server) Start() error {
 			if !s.imp.Init() {
 				return fmt.Errorf(s.Name + " init failed!")
 			}
-			s.imp.RegisterSMessage(s)
+			s.imp.RegisterMessage(s)
 		}
 	}
 
-	for _, v := range svr.nullservices {
-		for _, s := range v {
-			if !s.imp.Init() {
-				return fmt.Errorf(s.Name + " init failed!")
-			}
-		}
-	}
-
-	for _, v := range svr.connects {
-		for _, c := range v {
-			c.imp.RegisterCMessage(c)
-		}
-	}
-
-	keyUsed := make(map[int]int)
-	for k, v := range svr.services {
-		keyUsed[k] = 1
-		ct, _ := svr.connects[k]
-		ns, _ := svr.nullservices[k]
-		go func(ss []*Service, sn []*NullService, cc []*Connect) {
+	for _, v := range svr.services {
+		go func(ss []*Service) {
 			svr.wg.Add(1)
 			for svr.isclose == 0 {
 				for _, s := range ss {
 					s.loop()
 					s.imp.Loop()
 				}
-				for _, s := range sn {
-					s.imp.Loop()
+				if svr.loopmsec > 0 {
+					time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
 				}
-				for _, c := range cc {
-					c.loop()
-				}
-				time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
-			}
-			svr.wg.Done()
-		}(v, ns, ct)
-	}
-
-	for k, v := range svr.nullservices {
-		if _, ok := keyUsed[k]; ok {
-			continue
-		}
-		go func(ns []*NullService) {
-			svr.wg.Add(1)
-			for svr.isclose == 0 {
-				for _, s := range ns {
-					s.imp.Loop()
-				}
-				time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
 			}
 			svr.wg.Done()
 		}(v)
 	}
 
-	for k, v := range svr.connects {
-		if _, ok := keyUsed[k]; ok {
-			continue
-		}
-		go func(cc []*Connect) {
-			svr.wg.Add(1)
-			for svr.isclose == 0 {
-				for _, c := range cc {
-					c.loop()
-				}
-				time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
-			}
-			svr.wg.Done()
-		}(v)
-	}
 	return nil
 }
 
@@ -141,11 +93,6 @@ func (svr *Server) Stop() {
 			s.destroy()
 		}
 	}
-	for _, v := range svr.connects {
-		for _, c := range v {
-			c.destroy()
-		}
-	}
 	//stop logic work
 	atomic.CompareAndSwapUint32(&svr.isclose, 0, 1)
 	svr.wg.Wait()
@@ -153,16 +100,6 @@ func (svr *Server) Stop() {
 		for _, s := range v {
 			s.imp.Destroy()
 			s.destroy()
-		}
-	}
-	for _, v := range svr.nullservices {
-		for _, s := range v {
-			s.imp.Destroy()
-		}
-	}
-	for _, v := range svr.connects {
-		for _, c := range v {
-			c.destroy()
 		}
 	}
 }

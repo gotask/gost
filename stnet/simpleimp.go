@@ -20,12 +20,15 @@ func (service *ServiceEcho) Loop() {
 func (service *ServiceEcho) Destroy() {
 
 }
-func (service *ServiceEcho) RegisterSMessage(*Service) {
+func (service *ServiceEcho) RegisterMessage(*Service) {
 
 }
 func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	sess.Send(data)
 	return len(data), 0, nil, nil
+}
+func (service *ServiceEcho) HashHandleThread(sess *Session) int {
+	return -1
 }
 func (service *ServiceEcho) SessionOpen(sess *Session) {
 
@@ -53,7 +56,7 @@ func (service *ServiceHttp) Destroy() {
 func (service *ServiceHttp) HandleHttpReq(s *Session, msg interface{}) {
 	//req := msg.(*http.Request)
 }
-func (service *ServiceHttp) RegisterSMessage(s *Service) {
+func (service *ServiceHttp) RegisterMessage(s *Service) {
 	s.RegisterMessage(0, service.HandleHttpReq)
 }
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
@@ -62,6 +65,9 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 		return 0, 0, nil, nil
 	}
 	return len(data), 0, req, nil
+}
+func (service *ServiceHttp) HashHandleThread(sess *Session) int {
+	return -1
 }
 func (service *ServiceHttp) SessionOpen(sess *Session) {
 

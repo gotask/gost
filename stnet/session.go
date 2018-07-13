@@ -218,13 +218,14 @@ func (s *Session) dohand() {
 			}
 		anthorMsg:
 			parseLen := s.parser.ParseMsg(s, buf)
-			tempBuf = buf[parseLen:]
 			if parseLen >= len(buf) {
 				tempBuf = nil
 				bp.Free(buf)
 			} else if parseLen > 0 {
-				buf = tempBuf
+				buf = buf[parseLen:]
 				goto anthorMsg
+			} else {
+				tempBuf = buf[parseLen:]
 			}
 		}
 	}

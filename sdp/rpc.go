@@ -58,32 +58,32 @@ type RPC struct {
 	ReqSequence uint32
 }
 
-type ExceptionHander = func(int32)
-
 type rpcRequest struct {
 	req       RequestPacket
 	callback  interface{}
-	exception ExceptionHander
+	exception interface{}
 	timeout   int64
 }
 
-func (rpc *RPC) SyncCallWithCallbackAndException(funcName string, params ...interface{}) error { //the last two params should be callback function and exception function
+//exception function:	func(int32){}
+func (rpc *RPC) ASyncCallWithCallbackAndException(funcName string, params ...interface{}) error { //the last two params should be callback function and exception function
 	if len(params) < 2 || reflect.TypeOf(params[len(params)-2]).Kind() != reflect.Func {
 		return ErrNoCallbackFunc
 	}
-	if _, ok := params[len(params)-1].(ExceptionHander); !ok {
+	parma1Type := reflect.TypeOf(params[len(params)-1])
+	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int32 {
 		return ErrNoCallbackFunc
 	}
 
 	rpcReq := rpcRequest{}
 	rpcReq.req.FuncName = funcName
 	rpcReq.callback = params[len(params)-2]
-	rpcReq.exception = params[len(params)-1].(ExceptionHander)
+	rpcReq.exception = params[len(params)-1]
 	params = params[0 : len(params)-2]
-	return rpc.synccall(rpcReq, params...)
+	return rpc.asynccall(rpcReq, params...)
 }
 
-func (rpc *RPC) SyncCallWithCallback(funcName string, params ...interface{}) error {
+func (rpc *RPC) ASyncCallWithCallback(funcName string, params ...interface{}) error {
 	if len(params) == 0 || reflect.TypeOf(params[len(params)-1]).Kind() != reflect.Func {
 		return ErrNoCallbackFunc
 	}
@@ -93,34 +93,35 @@ func (rpc *RPC) SyncCallWithCallback(funcName string, params ...interface{}) err
 	rpcReq.callback = params[len(params)-1]
 	rpcReq.exception = nil
 	params = params[0 : len(params)-1]
-	return rpc.synccall(rpcReq, params...)
+	return rpc.asynccall(rpcReq, params...)
 }
 
-func (rpc *RPC) SyncCallWithException(funcName string, params ...interface{}) error {
+func (rpc *RPC) ASyncCallWithException(funcName string, params ...interface{}) error {
 	if len(params) == 0 {
 		return ErrNoCallbackFunc
 	}
-	if _, ok := params[len(params)-1].(ExceptionHander); !ok {
+	parma1Type := reflect.TypeOf(params[len(params)-1])
+	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int32 {
 		return ErrNoCallbackFunc
 	}
 
 	rpcReq := rpcRequest{}
 	rpcReq.req.FuncName = funcName
 	rpcReq.callback = nil
-	rpcReq.exception = params[len(params)-1].(ExceptionHander)
+	rpcReq.exception = params[len(params)-1]
 	params = params[0 : len(params)-1]
-	return rpc.synccall(rpcReq, params...)
+	return rpc.asynccall(rpcReq, params...)
 }
 
-func (rpc *RPC) SyncCall(funcName string, params ...interface{}) error {
+func (rpc *RPC) ASyncCall(funcName string, params ...interface{}) error {
 	rpcReq := rpcRequest{}
 	rpcReq.req.FuncName = funcName
 	rpcReq.callback = nil
 	rpcReq.exception = nil
-	return rpc.synccall(rpcReq, params...)
+	return rpc.asynccall(rpcReq, params...)
 }
 
-func (rpc *RPC) synccall(rpcReq rpcRequest, params ...interface{}) error {
+func (rpc *RPC) asynccall(rpcReq rpcRequest, params ...interface{}) error {
 	rpcReq.timeout = time.Now().Unix() + TimeOut
 	rpcReq.req.ServiceName = rpc.ServiceName
 	rpcReq.req.RequestId = rpc.ReqSequence
@@ -129,7 +130,7 @@ func (rpc *RPC) synccall(rpcReq rpcRequest, params ...interface{}) error {
 	for i, v := range params {
 		err := sdp.pack(uint32(i+1), v, true, true)
 		if err != nil {
-			return fmt.Errorf("wrong params in synccall:%s", err.Error())
+			return fmt.Errorf("wrong params in asynccall:%s", err.Error())
 		}
 	}
 	rpcReq.req.ReqPayload = string(sdp.buf)
@@ -160,9 +161,9 @@ func (rpc *RPCImp) Loop() {
 		if v.timeout < now {
 			if v.exception != nil {
 				if !rpc.conn.IsConnected() {
-					v.exception(SDPPROXYCONNECTERR)
+					reflect.ValueOf(v.exception).Call([]reflect.Value{reflect.ValueOf(SDPPROXYCONNECTERR)})
 				} else {
-					v.exception(SDPASYNCCALLTIMEOUT)
+					reflect.ValueOf(v.exception).Call([]reflect.Value{reflect.ValueOf(SDPASYNCCALLTIMEOUT)})
 				}
 			}
 			delete(rpc.requests, k)
@@ -173,8 +174,8 @@ func (rpc *RPCImp) Destroy() {
 
 }
 
-func (rpc *RPCImp) RegisterCMessage(ct *Connect) {
-	ct.RegisterMessage(0, rpc.HandleCallBack)
+func (rpc *RPCImp) RegisterMessage(s *Service) {
+	s.RegisterMessage(0, rpc.HandleCallBack)
 }
 
 func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
@@ -189,7 +190,7 @@ func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
 
 	if rsp.MfwRet != 0 {
 		if v.exception != nil {
-			v.exception(rsp.MfwRet)
+			reflect.ValueOf(v.exception).Call([]reflect.Value{reflect.ValueOf(rsp.MfwRet)})
 		}
 	} else {
 		sdp := Sdp{[]byte(rsp.RspPayload), 0}
@@ -203,7 +204,7 @@ func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
 				e := sdp.unpack(val, true)
 				if e != nil {
 					if v.exception != nil {
-						v.exception(SDPRPCFUNCPARAMSEERR)
+						reflect.ValueOf(v.exception).Call([]reflect.Value{reflect.ValueOf(SDPRPCFUNCPARAMSEERR)})
 					}
 					rpc.HandleError(s, e)
 					return
@@ -232,10 +233,13 @@ func (rpc *RPCImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID u
 	}
 	return int(msgLen), 0, rsp, nil
 }
-func (rpc *RPCImp) Connected(sess *Session) {
+func (rpc *RPCImp) HashHandleThread(sess *Session) int {
+	return -1
+}
+func (rpc *RPCImp) SessionOpen(sess *Session) {
 
 }
-func (rpc *RPCImp) DisConnected(sess *Session) {
+func (rpc *RPCImp) SessionClose(sess *Session) {
 
 }
 func (rpc *RPCImp) HandleError(sess *Session, err error) {
@@ -254,7 +258,7 @@ func (rpc *RPCServerImp) Loop() {
 func (rpc *RPCServerImp) Destroy() {
 
 }
-func (rpc *RPCServerImp) RegisterSMessage(s *Service) {
+func (rpc *RPCServerImp) RegisterMessage(s *Service) {
 	s.RegisterMessage(0, rpc.HandleRpcRequest)
 }
 func (rpc *RPCServerImp) HandleRpcRequest(s *Session, i interface{}) {
@@ -329,6 +333,9 @@ func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed int, m
 	}
 	req.Timeout = uint32(time.Now().Unix() + TimeOut)
 	return int(msgLen), 0, req, nil
+}
+func (service *RPCServerImp) HashHandleThread(sess *Session) int {
+	return -1
 }
 func (rpc *RPCServerImp) SessionOpen(sess *Session) {
 }

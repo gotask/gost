@@ -5,7 +5,7 @@ import (
 )
 
 type SdpServer struct {
-	Server
+	*Server
 }
 
 func (svr *SdpServer) AddRpcService(name, address string, rpcFuncStruct interface{}, threadId int) (*Service, error) {
@@ -19,9 +19,9 @@ func (svr *SdpServer) AddRpcClient(name, servicename, address string, threadId i
 	if err != nil {
 		return nil, err
 	}
-	svr.AddNullService(name, rpcimp, threadId)
 	return &RPC{ct, rpcimp, servicename, 1}, nil
 }
 
 //AddService ServiceSdp
 //AddConnect ConnectSdp
+//NewConnect ConnectSdp

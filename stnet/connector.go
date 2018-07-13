@@ -17,9 +17,9 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connector, error) {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connector {
 	if msgparse == nil {
-		return nil, ErrMsgParseNil
+		panic(ErrMsgParseNil)
 	}
 
 	conn := &Connector{
@@ -35,7 +35,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) (*Connec
 
 	go conn.connect()
 
-	return conn, nil
+	return conn
 }
 
 func (conn *Connector) connect() {
@@ -65,12 +65,6 @@ func (conn *Connector) connect() {
 
 func (cnt *Connector) IsConnected() bool {
 	return !cnt.Session.IsClose()
-}
-
-func (c *Connector) Start() {
-	if atomic.CompareAndSwapUint32(&c.isclose, 1, 0) {
-		go c.connect()
-	}
 }
 
 func (c *Connector) Close() {

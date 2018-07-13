@@ -6,6 +6,11 @@ import (
 	. "github.com/gotask/gost/stnet"
 )
 
+var (
+	MinMsgLen uint32 = 4
+	MaxMsgLen uint32 = 1024 * 1024
+)
+
 //ServiceImpSdp
 type ReqProto struct {
 	ReqCmdId  uint32 `tag:"0" require:"true"`
@@ -31,12 +36,13 @@ func (service *ServiceSdp) Loop() {
 func (service *ServiceSdp) Destroy() {
 
 }
-func (service *ServiceSdp) HandleReqProto(s *Session, msg interface{}) {
+
+/*func (service *ServiceSdp) HandleReqProto(s *Session, msg interface{}) {
 	//req := msg.(*ReqProto)
 }
-func (service *ServiceSdp) RegisterSMessage(s *Service) {
+func (service *ServiceSdp) RegisterMessage(s *Service) {
 	s.RegisterMessage(0, service.HandleReqProto)
-}
+}*/
 func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
@@ -52,6 +58,9 @@ func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int,
 	}
 	return int(msgLen), 0, req, nil
 }
+func (service *ServiceSdp) HashHandleThread(sess *Session) int {
+	return -1
+}
 func (service *ServiceSdp) SessionOpen(sess *Session) {
 
 }
@@ -65,17 +74,30 @@ func (service *ServiceSdp) HandleError(sess *Session, err error) {
 type ConnectSdp struct {
 }
 
-func (cs *ConnectSdp) HandleRspProto(s *Session, msg interface{}) {
-	//req := msg.(*RspProto)
+func (cs *ConnectSdp) Init() bool {
+	return true
 }
-func (cs *ConnectSdp) RegisterCMessage(c *Connect) {
-	c.RegisterMessage(0, cs.HandleRspProto)
+func (cs *ConnectSdp) Loop() {
+
 }
+func (cs *ConnectSdp) Destroy() {
+
+}
+
+/*func (cs *ConnectSdp) HandleRspProto(s *Session, msg interface{}) {
+	//rsp := msg.(*RspProto)
+}
+func (cs *ConnectSdp) RegisterMessage(s *Service) {
+	s.RegisterMessage(0, cs.HandleRspProto)
+}*/
 func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
+	if msgLen < MinMsgLen || msgLen > MaxMsgLen {
+		return int(msgLen), 0, nil, fmt.Errorf("message length is wrong;len=%d;", msgLen)
+	}
 	if len(data) < int(msgLen) {
 		return 0, 0, nil, nil
 	}
@@ -86,13 +108,15 @@ func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgI
 	}
 	return int(msgLen), 0, rsp, nil
 }
-
-func (cs *ConnectSdp) Connected(sess *Session) {
+func (service *ConnectSdp) HashHandleThread(sess *Session) int {
+	return -1
+}
+func (service *ConnectSdp) SessionOpen(sess *Session) {
 
 }
-func (cs *ConnectSdp) DisConnected(sess *Session) {
+func (service *ConnectSdp) SessionClose(sess *Session) {
 
 }
-func (cs *ConnectSdp) HandleError(s *Session, err error) {
+func (service *ConnectSdp) HandleError(sess *Session, err error) {
 	fmt.Println(err.Error())
 }
