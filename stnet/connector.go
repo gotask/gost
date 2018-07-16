@@ -44,7 +44,7 @@ func (conn *Connector) connect() {
 		cn, err := net.Dial("tcp", conn.address)
 		if err != nil {
 			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
-			if conn.reconnectMSec <= 0 {
+			if conn.reconnectMSec <= 0 || conn.closeflag {
 				break
 			}
 			time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
@@ -54,7 +54,7 @@ func (conn *Connector) connect() {
 		conn.Session.restart(cn)
 
 		<-conn.sessCloseSignal
-		if conn.reconnectMSec <= 0 {
+		if conn.reconnectMSec <= 0 || conn.closeflag {
 			break
 		}
 		time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)

@@ -99,7 +99,6 @@ func (svr *Server) Stop() {
 	for _, v := range svr.services {
 		for _, s := range v {
 			s.imp.Destroy()
-			s.destroy()
 		}
 	}
 }
