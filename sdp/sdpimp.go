@@ -1,14 +1,17 @@
 package sdp
 
 import (
+	"bytes"
+	"compress/zlib"
 	"fmt"
+	"io"
 
 	. "github.com/gotask/gost/stnet"
 )
 
 var (
 	MinMsgLen uint32 = 4
-	MaxMsgLen uint32 = 1024 * 1024
+	MaxMsgLen uint32 = 1024 * 1024 * 100
 )
 
 //ServiceImpSdp
@@ -95,17 +98,31 @@ func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgI
 		return 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
+	codeType := msgLen >> 24 & 0x01
+	msgLen = msgLen & 0xFFFFFF
 	if msgLen < MinMsgLen || msgLen > MaxMsgLen {
 		return int(msgLen), 0, nil, fmt.Errorf("message length is wrong;len=%d;", msgLen)
 	}
 	if len(data) < int(msgLen) {
 		return 0, 0, nil, nil
 	}
+
 	rsp := &RspProto{}
-	e := Decode(rsp, data[4:msgLen])
-	if e != nil {
-		return int(msgLen), 0, nil, e
+	if codeType > 0 {
+		b := bytes.NewReader(data[4:msgLen])
+		var out bytes.Buffer
+		r, _ := zlib.NewReader(b)
+		io.Copy(&out, r)
+
+		err = Decode(rsp, out.Bytes())
+
+	} else {
+		err = Decode(rsp, data[4:msgLen])
 	}
+	if err != nil {
+		return int(msgLen), 0, nil, err
+	}
+
 	return int(msgLen), 0, rsp, nil
 }
 func (service *ConnectSdp) HashHandleThread(sess *Session) int {
@@ -118,5 +135,6 @@ func (service *ConnectSdp) SessionClose(sess *Session) {
 
 }
 func (service *ConnectSdp) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
+	sess.Close()
 }

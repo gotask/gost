@@ -202,6 +202,8 @@ func (s *Session) dorecv() {
 			msgbuf = bp.Alloc(bufLen / 2)
 		} else if n == bufLen {
 			msgbuf = bp.Alloc(bufLen * 2)
+		} else {
+			msgbuf = bp.Alloc(bufLen)
 		}
 	}
 }
