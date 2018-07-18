@@ -18,7 +18,7 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 	for i := 0; i <= msgThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, make(map[uint32]FuncHandleMessage), sync.WaitGroup{}, false, make([]*Connect, 0), sync.Mutex{}}
+	svr := &Service{name, nil, imp, msgTh, make(map[uint32]FuncHandleMessage), sync.WaitGroup{}, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
 
 	if address != "" {
 		lis, err := NewListener(address, svr)
@@ -64,7 +64,7 @@ type Service struct {
 	messageHandlers map[uint32]FuncHandleMessage
 	wg              sync.WaitGroup
 	isClose         bool
-	connects        []*Connect
+	connects        map[uint64]*Connect
 	mutex           sync.Mutex
 }
 
@@ -109,8 +109,8 @@ func (service *Service) destroy() {
 	if service.listen != nil {
 		service.listen.Close()
 	}
-	for _, ct := range service.connects {
-		ct.destroy()
+	for _, v := range service.connects {
+		v.destroy()
 	}
 	for i := 0; i < msgThreadsNum; i++ {
 		select {
@@ -154,7 +154,7 @@ func newConnect(service *Service, name, address string, reconnectmsec int) (*Con
 	}
 	conn := &Connect{service, NewConnector(address, reconnectmsec, service), name}
 	service.mutex.Lock()
-	service.connects = append(service.connects, conn)
+	service.connects[conn.GetID()] = conn
 	service.mutex.Unlock()
 	return conn, nil
 }
@@ -165,6 +165,14 @@ type Connect struct {
 	Name string
 }
 
+func (ct *Connect) Close() {
+	ct.destroy()
+	ct.mutex.Lock()
+	if _, ok := ct.connects[ct.GetID()]; ok {
+		delete(ct.connects, ct.GetID())
+	}
+	ct.mutex.Unlock()
+}
 func (ct *Connect) destroy() {
 	ct.Connector.Close()
 }
