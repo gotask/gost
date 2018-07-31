@@ -9,10 +9,20 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"time"
 )
+
+var (
+	DefaultLog *Logger
+)
+
+func init() {
+	DefaultLog = NewLogger()
+	DefaultLog.SetFileLevel(DEBUG, "default.log", 1024*1024*100, 1, 30) //one file 100M, 10 files max one day
+}
 
 type Level int
 
@@ -88,10 +98,10 @@ type Logger struct {
 
 func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 	// Determine caller func
-	pc, _, lineno, ok := runtime.Caller(3)
+	pc, file, lineno, ok := runtime.Caller(3)
 	src := ""
 	if ok {
-		src = fmt.Sprintf("%s:%d", runtime.FuncForPC(pc).Name(), lineno)
+		src = fmt.Sprintf("%s:%s:%d", path.Base(file), runtime.FuncForPC(pc).Name(), lineno)
 	}
 
 	msg := format
