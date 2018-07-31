@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"net"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -103,6 +104,18 @@ func newConnSession(msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 	return sess, nil
 }
 
+func (s *Session) handlePanic() {
+	if err := recover(); err != nil {
+		SysLog.Critical("panic error: %v", err)
+		SysLog.Critical("panic stack: %s", string(debug.Stack()))
+		//close socket
+		s.socket.Close()
+		close(s.closer)
+		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
+		s.onclose(s)
+	}
+}
+
 func (s *Session) restart(con net.Conn) error {
 	if !atomic.CompareAndSwapUint32(&s.isclose, 1, 0) {
 		return ErrSocketIsOpen
@@ -181,6 +194,8 @@ func (s *Session) dosend() {
 }
 
 func (s *Session) dorecv() {
+	defer s.handlePanic()
+
 	s.parser.SessionEvent(s, Open)
 
 	msgbuf := bp.Alloc(MsgBuffSize)
@@ -209,6 +224,8 @@ func (s *Session) dorecv() {
 }
 
 func (s *Session) dohand() {
+	defer s.handlePanic()
+
 	var tempBuf []byte
 	for {
 		select {

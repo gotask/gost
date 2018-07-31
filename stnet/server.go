@@ -71,12 +71,17 @@ func (svr *Server) Start() error {
 		go func(ss []*Service) {
 			svr.wg.Add(1)
 			for svr.isclose == 0 {
+				nowA := time.Now()
 				for _, s := range ss {
 					s.loop()
-					s.imp.Loop()
 				}
 				if svr.loopmsec > 0 {
-					time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
+					nowB := time.Now()
+					subD := nowB.Sub(nowA)
+					needD := time.Duration(svr.loopmsec) * time.Millisecond
+					if subD < needD {
+						time.Sleep(needD - subD)
+					}
 				}
 			}
 			svr.wg.Done()

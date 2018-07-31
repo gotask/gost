@@ -2,6 +2,7 @@ package stnet
 
 import (
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 )
@@ -32,21 +33,34 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 		go func(idx int) {
 			svr.wg.Add(1)
 			for !svr.isClose {
-				select {
-				case msg := <-svr.messageQ[idx]:
-					if msg.DtType == Data {
-						if handler, ok := svr.messageHandlers[msg.MsgID]; ok {
-							handler(msg.Sess, msg.Msg)
-						} else {
-							SysLog.Error("message handler not find;msgid=%d;sessionid=%d", msg.MsgID, msg.Sess.GetID())
-						}
-					}
-				}
+				svr.messageThread(idx)
 			}
 			svr.wg.Done()
 		}(i + 1)
 	}
 	return svr, nil
+}
+
+func (service *Service) handlePanic() {
+	if err := recover(); err != nil {
+		SysLog.Critical("panic error: %v", err)
+		SysLog.Critical("panic stack: %s", string(debug.Stack()))
+	}
+}
+
+func (service *Service) messageThread(idx int) {
+	defer service.handlePanic()
+
+	select {
+	case msg := <-service.messageQ[idx]:
+		if msg.DtType == Data {
+			if handler, ok := service.messageHandlers[msg.MsgID]; ok {
+				handler(msg.Sess, msg.Msg)
+			} else {
+				SysLog.Error("message handler not find;msgid=%d;sessionid=%d", msg.MsgID, msg.Sess.GetID())
+			}
+		}
+	}
 }
 
 func (service *Service) RegisterMessage(msgID uint32, handler FuncHandleMessage) {
@@ -81,7 +95,10 @@ func (service *Service) Imp() ServiceImp {
 }
 
 func (service *Service) loop() {
-	for i := 0; i < 100; i++ {
+	defer service.handlePanic()
+
+	service.imp.Loop()
+	for i := 0; i < 1024; i++ {
 		select {
 		case msg := <-service.messageQ[0]:
 			if msg.Err != nil {
