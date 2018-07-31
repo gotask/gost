@@ -22,7 +22,95 @@ func LoadINI(path string) (*Config, error) {
 	if e != nil {
 		return nil, e
 	}
+	cfg.path = path
 	return cfg, nil
+}
+
+func (config *Config) Save() error {
+	f, err := os.Create(config.path)
+	if err != nil {
+		return err
+	}
+
+	for _, key := range config.keys {
+		if val, ok := config.values[key]; ok {
+			if com, ok := config.commentValues[key]; ok && com != "" {
+				f.WriteString(com)
+				f.WriteString("\n")
+			}
+			f.WriteString(key)
+			f.WriteString(" = ")
+			f.WriteString(val)
+			f.WriteString("\n")
+		}
+	}
+
+	for _, seckey := range config.sectionkeys {
+		if sec, ok := config.sections[seckey]; ok {
+			f.WriteString("\n")
+			if sec.commentSection != "" {
+				f.WriteString(sec.commentSection)
+				f.WriteString("\n")
+			}
+			f.WriteString("[")
+			f.WriteString(sec.name)
+			f.WriteString("]\n")
+			for _, key := range sec.keys {
+				if val, ok := sec.values[key]; ok {
+					if com, ok := sec.commentValues[key]; ok && com != "" {
+						f.WriteString(com)
+						f.WriteString("\n")
+					}
+					f.WriteString(key)
+					f.WriteString(" = ")
+					f.WriteString(val)
+					f.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	f.Close()
+	return nil
+}
+
+func (config *configSection) set(key, val, comment string) {
+	if comment != "" {
+		comment = "#" + comment
+	}
+	if _, ok := config.values[key]; ok {
+		config.values[key] = val
+		if comment != "" {
+			config.commentValues[key] = comment
+		}
+	} else {
+		config.values[key] = val
+		config.commentValues[key] = comment
+		config.keys = append(config.keys, key)
+	}
+}
+
+func (config *Config) Set(key, val, comment string) {
+	config.configSection.set(key, val, comment)
+}
+
+func (config *Config) SectionSet(section, key, val, comment string) {
+	if sec, ok := config.sections[section]; ok {
+		sec.set(key, val, comment)
+	} else {
+		sec = new(configSection)
+		sec.name = section
+		sec.values = make(map[string]string)
+		sec.values[key] = val
+		sec.commentValues = make(map[string]string)
+		if comment != "" {
+			sec.commentValues[key] = "#" + comment
+		}
+		sec.keys = make([]string, 1)
+		sec.keys[0] = key
+		config.sections[section] = sec
+		config.sectionkeys = append(config.sectionkeys, section)
+	}
 }
 
 func (config *Config) String(key string, def string) string {
@@ -69,31 +157,42 @@ func (config *Config) FloatSection(sec string, key string, def float64) float64 
 type configSection struct {
 	name   string
 	values map[string]string
+
+	commentSection string
+	commentValues  map[string]string
+
+	keys []string
 }
 
 type Config struct {
 	configSection
-	sections map[string]*configSection
+	sections    map[string]*configSection
+	sectionkeys []string
+	path        string
 }
 
-func trimSpaceAndComment(sLine string) string {
+func trimSpaceAndComment(sLine string) (line, comment string) {
 	sLine = strings.TrimSpace(sLine)
 	if len(sLine) == 0 {
-		return ""
+		return "", ""
 	}
 	lineRune := []rune(sLine)
 	sT := string(lineRune[0:1])
 	if sT == "#" || sT == ";" {
-		return ""
+		return "", sLine
 	}
-	return sLine
+	return sLine, ""
 }
 
 func (config *Config) readIniFile(input io.Reader) error {
 	config.values = make(map[string]string)
 	config.sections = make(map[string]*configSection)
+	config.commentValues = make(map[string]string)
+	config.keys = make([]string, 0)
+	config.sectionkeys = make([]string, 0)
 
 	ln := 0
+	var comment string
 	var currentSection *configSection
 	scanner := bufio.NewScanner(input)
 	for scanner.Scan() {
@@ -107,8 +206,12 @@ func (config *Config) readIniFile(input io.Reader) error {
 			}
 			curLine = string(lineRune)
 		}
-		curLine = trimSpaceAndComment(curLine)
+		var curComment string
+		curLine, curComment = trimSpaceAndComment(curLine)
 		if len(curLine) == 0 {
+			if curComment != "" {
+				comment += curComment
+			}
 			continue
 		}
 
@@ -122,11 +225,16 @@ func (config *Config) readIniFile(input io.Reader) error {
 				currentSection = new(configSection)
 				currentSection.name = sectionName
 				currentSection.values = make(map[string]string)
+				currentSection.commentSection = comment
+				currentSection.commentValues = make(map[string]string)
+				currentSection.keys = make([]string, 0)
 				config.sections[currentSection.name] = currentSection
+				config.sectionkeys = append(config.sectionkeys, sectionName)
 			} else {
 				currentSection = sect
 			}
 
+			comment = ""
 			continue
 		}
 
@@ -139,12 +247,16 @@ func (config *Config) readIniFile(input io.Reader) error {
 		key := strings.TrimSpace(curLine[0:index])
 		value := strings.Trim(strings.TrimSpace(curLine[index+1:]), "\"'")
 
-		if _, ok := config.values[key]; !ok {
-			config.values[key] = value
-		}
 		if currentSection != nil {
 			currentSection.values[key] = value
+			currentSection.commentValues[key] = comment
+			currentSection.keys = append(currentSection.keys, key)
+		} else {
+			config.values[key] = value
+			config.commentValues[key] = comment
+			config.keys = append(config.keys, key)
 		}
+		comment = ""
 	}
 
 	return scanner.Err()
