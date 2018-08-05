@@ -110,9 +110,6 @@ func (s *Session) handlePanic() {
 		SysLog.Critical("panic stack: %s", string(debug.Stack()))
 		//close socket
 		s.socket.Close()
-		close(s.closer)
-		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
-		s.onclose(s)
 	}
 }
 
@@ -194,7 +191,18 @@ func (s *Session) dosend() {
 }
 
 func (s *Session) dorecv() {
-	defer s.handlePanic()
+	defer func() {
+		if err := recover(); err != nil {
+			SysLog.Critical("panic error: %v", err)
+			SysLog.Critical("panic stack: %s", string(debug.Stack()))
+		}
+		//close socket
+		s.socket.Close()
+		close(s.closer)
+		s.wg.Wait()
+		s.onclose(s)
+		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
+	}()
 
 	s.parser.SessionEvent(s, Open)
 
@@ -203,11 +211,6 @@ func (s *Session) dorecv() {
 		n, err := s.socket.Read(msgbuf)
 		if err != nil {
 			s.parser.SessionEvent(s, Close)
-			s.socket.Close()
-			close(s.closer)
-			s.wg.Wait()
-			s.onclose(s)
-			atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 			return
 		}
 		s.hander <- msgbuf[0:n]

@@ -3,7 +3,6 @@ package stnet
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"net/http"
 )
 
@@ -37,7 +36,7 @@ func (service *ServiceEcho) SessionClose(sess *Session) {
 
 }
 func (service *ServiceEcho) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
 }
 
 //ServiceHttp
@@ -53,12 +52,13 @@ func (service *ServiceHttp) Loop() {
 func (service *ServiceHttp) Destroy() {
 
 }
-func (service *ServiceHttp) HandleHttpReq(s *Session, msg interface{}) {
+
+/*func (service *ServiceHttp) HandleHttpReq(s *Session, msg interface{}) {
 	//req := msg.(*http.Request)
 }
 func (service *ServiceHttp) RegisterMessage(s *Service) {
 	s.RegisterMessage(0, service.HandleHttpReq)
-}
+}*/
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
 	if err != nil {
@@ -76,5 +76,5 @@ func (service *ServiceHttp) SessionClose(sess *Session) {
 
 }
 func (service *ServiceHttp) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
 }

@@ -71,7 +71,8 @@ func (service *ServiceSdp) SessionClose(sess *Session) {
 
 }
 func (service *ServiceSdp) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
+	sess.Close()
 }
 
 type ConnectSdp struct {
