@@ -246,8 +246,8 @@ func (s *Session) dohand() {
 			} else if parseLen > 0 {
 				buf = buf[parseLen:]
 				goto anthorMsg
-			} else {
-				tempBuf = buf[parseLen:]
+			} else if parseLen == 0 {
+				tempBuf = buf
 			}
 		}
 	}

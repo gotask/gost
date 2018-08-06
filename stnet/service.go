@@ -19,7 +19,7 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 	for i := 0; i <= msgThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, make(map[uint32]FuncHandleMessage), sync.WaitGroup{}, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
+	svr := &Service{name, nil, imp, msgTh, sync.WaitGroup{}, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
 
 	if address != "" {
 		lis, err := NewListener(address, svr)
@@ -54,38 +54,26 @@ func (service *Service) messageThread(idx int) {
 	select {
 	case msg := <-service.messageQ[idx]:
 		if msg.DtType == Data {
-			if handler, ok := service.messageHandlers[msg.MsgID]; ok {
-				handler(msg.Sess, msg.Msg)
-			} else {
-				SysLog.Error("message handler not find;msgid=%d;sessionid=%d", msg.MsgID, msg.Sess.GetID())
-			}
+			service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
 		}
 	}
 }
 
-func (service *Service) RegisterMessage(msgID uint32, handler FuncHandleMessage) {
-	if handler == nil {
-		return
-	}
-	service.messageHandlers[msgID] = handler
-}
-
 type Service struct {
-	Name            string
-	listen          *Listener
-	imp             ServiceImp
-	messageQ        []chan sessionMessage
-	messageHandlers map[uint32]FuncHandleMessage
-	wg              sync.WaitGroup
-	isClose         bool
-	connects        map[uint64]*Connect
-	mutex           sync.Mutex
+	Name     string
+	listen   *Listener
+	imp      ServiceImp
+	messageQ []chan sessionMessage
+	wg       sync.WaitGroup
+	isClose  bool
+	connects map[uint64]*Connect
+	mutex    sync.Mutex
 }
 
 type sessionMessage struct {
 	Sess   *Session
 	DtType CMDType
-	MsgID  uint32
+	MsgID  int32
 	Msg    interface{}
 	Err    error
 }
@@ -108,11 +96,7 @@ func (service *Service) loop() {
 			} else if msg.DtType == Close {
 				service.imp.SessionClose(msg.Sess)
 			} else if msg.DtType == Data {
-				if handler, ok := service.messageHandlers[msg.MsgID]; ok {
-					handler(msg.Sess, msg.Msg)
-				} else {
-					SysLog.Error("message handler not find;service=%s;msgid=%d;sessionid=%d", service.Name, msg.MsgID, msg.Sess.GetID())
-				}
+				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
 			} else {
 				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
 			}
@@ -139,8 +123,8 @@ func (service *Service) destroy() {
 }
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	lenParsed, msgid, msg, e := service.imp.Unmarshal(sess, data)
-	if lenParsed == 0 {
-		return 0
+	if lenParsed <= 0 || msgid < 0 {
+		return lenParsed
 	}
 	th := service.imp.HashHandleThread(sess)
 	if e != nil || th < 0 || th > msgThreadsNum {

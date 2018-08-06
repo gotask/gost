@@ -63,7 +63,6 @@ func (svr *Server) Start() error {
 			if !s.imp.Init() {
 				return fmt.Errorf(s.Name + " init failed!")
 			}
-			s.imp.RegisterMessage(s)
 		}
 	}
 

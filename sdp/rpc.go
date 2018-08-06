@@ -174,8 +174,8 @@ func (rpc *RPCImp) Destroy() {
 
 }
 
-func (rpc *RPCImp) RegisterMessage(s *Service) {
-	s.RegisterMessage(0, rpc.HandleCallBack)
+func (rpc *RPCImp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
+	rpc.HandleCallBack(sess, msg)
 }
 
 func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
@@ -218,7 +218,7 @@ func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
 
 }
 
-func (rpc *RPCImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (rpc *RPCImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
@@ -258,8 +258,8 @@ func (rpc *RPCServerImp) Loop() {
 func (rpc *RPCServerImp) Destroy() {
 
 }
-func (rpc *RPCServerImp) RegisterMessage(s *Service) {
-	s.RegisterMessage(0, rpc.HandleRpcRequest)
+func (rpc *RPCServerImp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
+	rpc.HandleRpcRequest(sess, msg)
 }
 func (rpc *RPCServerImp) HandleRpcRequest(s *Session, i interface{}) {
 	req := i.(*RequestPacket)
@@ -318,7 +318,7 @@ func (rpc *RPCServerImp) SendResponse(s *Session, req *RequestPacket, ret int32,
 	return s.Send(PackSdpProtocol(Encode(rsp)))
 }
 
-func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}

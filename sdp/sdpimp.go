@@ -39,14 +39,10 @@ func (service *ServiceSdp) Loop() {
 func (service *ServiceSdp) Destroy() {
 
 }
-
-/*func (service *ServiceSdp) HandleReqProto(s *Session, msg interface{}) {
+func (service *ServiceSdp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 	//req := msg.(*ReqProto)
 }
-func (service *ServiceSdp) RegisterMessage(s *Service) {
-	s.RegisterMessage(0, service.HandleReqProto)
-}*/
-func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
@@ -87,14 +83,10 @@ func (cs *ConnectSdp) Loop() {
 func (cs *ConnectSdp) Destroy() {
 
 }
-
-/*func (cs *ConnectSdp) HandleRspProto(s *Session, msg interface{}) {
+func (cs *ConnectSdp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 	//rsp := msg.(*RspProto)
 }
-func (cs *ConnectSdp) RegisterMessage(s *Service) {
-	s.RegisterMessage(0, cs.HandleRspProto)
-}*/
-func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}

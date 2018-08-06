@@ -19,12 +19,12 @@ func (service *ServiceEcho) Loop() {
 func (service *ServiceEcho) Destroy() {
 
 }
-func (service *ServiceEcho) RegisterMessage(*Service) {
+func (service *ServiceEcho) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 
 }
-func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	sess.Send(data)
-	return len(data), 0, nil, nil
+	return len(data), -1, nil, nil
 }
 func (service *ServiceEcho) HashHandleThread(sess *Session) int {
 	return -1
@@ -52,14 +52,10 @@ func (service *ServiceHttp) Loop() {
 func (service *ServiceHttp) Destroy() {
 
 }
-
-/*func (service *ServiceHttp) HandleHttpReq(s *Session, msg interface{}) {
-	//req := msg.(*http.Request)
+func (service *ServiceHttp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
+	//req:=msg.(*http.Request)
 }
-func (service *ServiceHttp) RegisterMessage(s *Service) {
-	s.RegisterMessage(0, service.HandleHttpReq)
-}*/
-func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) {
+func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
 	if err != nil {
 		return 0, 0, nil, nil

@@ -1,14 +1,16 @@
 package stnet
 
-type FuncHandleMessage func(*Session, interface{})
-
 type ServiceImp interface {
 	Init() bool
 	Loop()
 	Destroy()
-	RegisterMessage(s *Service) //s.RegisterMessage(msgid, FuncHandleMessage)
+	HandleMessage(sess *Session, msgID uint32, msg interface{})
 
-	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID uint32, msg interface{}, err error) //must be rewrite
+	//protocol parsed
+	//lenParsed is the length readed from 'data';msgID and msg are messages parsed from data;
+	//when lenParsed <= 0 or msgID < 0,msg and err will be ignored.
+	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error)
+
 	//if return < 0, it only use main thread of the service.it should between 0-63
 	HashHandleThread(sess *Session) int
 
