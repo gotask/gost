@@ -218,23 +218,20 @@ func (rpc *RPCImp) HandleCallBack(s *Session, i interface{}) {
 
 }
 
-func (rpc *RPCImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+func (rpc *RPCImp) Unmarshal(sess *Session, data []byte) (lenParsed, processorID int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
 	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	rsp := &ResponsePacket{}
 	e := Decode(rsp, data[4:msgLen])
 	if e != nil {
-		return int(msgLen), 0, nil, e
+		return int(msgLen), 0, 0, nil, e
 	}
-	return int(msgLen), 0, rsp, nil
-}
-func (rpc *RPCImp) HashHandleThread(sess *Session) int {
-	return -1
+	return int(msgLen), 0, 0, rsp, nil
 }
 func (rpc *RPCImp) SessionOpen(sess *Session) {
 
@@ -243,7 +240,7 @@ func (rpc *RPCImp) SessionClose(sess *Session) {
 
 }
 func (rpc *RPCImp) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
 }
 
 type RPCServerImp struct {
@@ -318,29 +315,26 @@ func (rpc *RPCServerImp) SendResponse(s *Session, req *RequestPacket, ret int32,
 	return s.Send(PackSdpProtocol(Encode(rsp)))
 }
 
-func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+func (rpc *RPCServerImp) Unmarshal(sess *Session, data []byte) (lenParsed, processorID int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
 	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	req := &RequestPacket{}
 	e := Decode(req, data[4:msgLen])
 	if e != nil {
-		return int(msgLen), 0, nil, e
+		return int(msgLen), 0, 0, nil, e
 	}
 	req.Timeout = uint32(time.Now().Unix() + TimeOut)
-	return int(msgLen), 0, req, nil
-}
-func (service *RPCServerImp) HashHandleThread(sess *Session) int {
-	return -1
+	return int(msgLen), 0, 0, req, nil
 }
 func (rpc *RPCServerImp) SessionOpen(sess *Session) {
 }
 func (rpc *RPCServerImp) SessionClose(sess *Session) {
 }
 func (rpc *RPCServerImp) HandleError(sess *Session, err error) {
-	fmt.Println(err.Error())
+	SysLog.Error(err.Error())
 }

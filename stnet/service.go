@@ -8,18 +8,18 @@ import (
 )
 
 var (
-	msgThreadsNum = 64
+	msgProcessorThreadsNum = 128
 )
 
 func newService(name, address string, imp ServiceImp) (*Service, error) {
 	if imp == nil {
 		return nil, fmt.Errorf("ServiceImp should not be nil")
 	}
-	msgTh := make([]chan sessionMessage, msgThreadsNum+1)
-	for i := 0; i <= msgThreadsNum; i++ {
+	msgTh := make([]chan sessionMessage, msgProcessorThreadsNum+1)
+	for i := 0; i <= msgProcessorThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, sync.WaitGroup{}, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
+	svr := &Service{name, nil, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
 
 	if address != "" {
 		lis, err := NewListener(address, svr)
@@ -29,15 +29,6 @@ func newService(name, address string, imp ServiceImp) (*Service, error) {
 		svr.listen = lis
 	}
 
-	for i := 0; i < msgThreadsNum; i++ {
-		go func(idx int) {
-			svr.wg.Add(1)
-			for !svr.isClose {
-				svr.messageThread(idx)
-			}
-			svr.wg.Done()
-		}(i + 1)
-	}
 	return svr, nil
 }
 
@@ -48,15 +39,20 @@ func (service *Service) handlePanic() {
 	}
 }
 
-func (service *Service) messageThread(idx int) {
+func (service *Service) messageThread(idx int) int {
 	defer service.handlePanic()
 
-	select {
-	case msg := <-service.messageQ[idx]:
-		if msg.DtType == Data {
-			service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
+	for i := 0; i < 1024; i++ {
+		select {
+		case msg := <-service.messageQ[idx]:
+			if msg.DtType == Data {
+				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
+			}
+		default:
+			return i
 		}
 	}
+	return 1024
 }
 
 type Service struct {
@@ -64,7 +60,6 @@ type Service struct {
 	listen   *Listener
 	imp      ServiceImp
 	messageQ []chan sessionMessage
-	wg       sync.WaitGroup
 	isClose  bool
 	connects map[uint64]*Connect
 	mutex    sync.Mutex
@@ -113,21 +108,19 @@ func (service *Service) destroy() {
 	for _, v := range service.connects {
 		v.destroy()
 	}
-	for i := 0; i < msgThreadsNum; i++ {
+	for i := 0; i < msgProcessorThreadsNum; i++ {
 		select {
 		case service.messageQ[i+1] <- sessionMessage{nil, System, 0, nil, nil}:
 		default:
 		}
 	}
-	service.wg.Wait()
 }
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
-	lenParsed, msgid, msg, e := service.imp.Unmarshal(sess, data)
+	lenParsed, th, msgid, msg, e := service.imp.Unmarshal(sess, data)
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	th := service.imp.HashHandleThread(sess)
-	if e != nil || th < 0 || th > msgThreadsNum {
+	if e != nil || th < 0 || th > msgProcessorThreadsNum {
 		th = 0
 	}
 	to := time.NewTimer(time.Second)

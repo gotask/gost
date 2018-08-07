@@ -26,9 +26,6 @@ func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int
 	sess.Send(data)
 	return len(data), -1, nil, nil
 }
-func (service *ServiceEcho) HashHandleThread(sess *Session) int {
-	return -1
-}
 func (service *ServiceEcho) SessionOpen(sess *Session) {
 
 }
@@ -61,9 +58,6 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 		return 0, 0, nil, nil
 	}
 	return len(data), 0, req, nil
-}
-func (service *ServiceHttp) HashHandleThread(sess *Session) int {
-	return -1
 }
 func (service *ServiceHttp) SessionOpen(sess *Session) {
 

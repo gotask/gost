@@ -17,6 +17,9 @@ type Server struct {
 }
 
 func NewServer(name string, loopmsec uint32) *Server {
+	if loopmsec == 0 {
+		loopmsec = 1
+	}
 	svr := &Server{}
 	svr.name = name
 	svr.loopmsec = loopmsec
@@ -74,17 +77,32 @@ func (svr *Server) Start() error {
 				for _, s := range ss {
 					s.loop()
 				}
-				if svr.loopmsec > 0 {
-					nowB := time.Now()
-					subD := nowB.Sub(nowA)
-					needD := time.Duration(svr.loopmsec) * time.Millisecond
-					if subD < needD {
-						time.Sleep(needD - subD)
-					}
+
+				nowB := time.Now()
+				subD := nowB.Sub(nowA)
+				needD := time.Duration(svr.loopmsec) * time.Millisecond
+				if subD < needD {
+					time.Sleep(needD - subD)
 				}
 			}
 			svr.wg.Done()
 		}(v)
+
+		for i := 0; i < msgProcessorThreadsNum; i++ {
+			go func(idx int, ss []*Service) {
+				svr.wg.Add(1)
+				for svr.isclose == 0 {
+					n := 0
+					for _, s := range ss {
+						n += s.messageThread(idx)
+					}
+					if n == 0 {
+						time.Sleep(time.Duration(svr.loopmsec) * time.Millisecond)
+					}
+				}
+				svr.wg.Done()
+			}(i+1, v)
+		}
 	}
 
 	return nil

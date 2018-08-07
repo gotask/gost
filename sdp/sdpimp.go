@@ -42,23 +42,20 @@ func (service *ServiceSdp) Destroy() {
 func (service *ServiceSdp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 	//req := msg.(*ReqProto)
 }
-func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+func (service *ServiceSdp) Unmarshal(sess *Session, data []byte) (lenParsed, processorID int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
 	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	req := &ReqProto{}
 	e := Decode(req, data[4:msgLen])
 	if e != nil {
-		return int(msgLen), 0, nil, e
+		return int(msgLen), 0, 0, nil, e
 	}
-	return int(msgLen), 0, req, nil
-}
-func (service *ServiceSdp) HashHandleThread(sess *Session) int {
-	return -1
+	return int(msgLen), 0, 0, req, nil
 }
 func (service *ServiceSdp) SessionOpen(sess *Session) {
 
@@ -86,18 +83,18 @@ func (cs *ConnectSdp) Destroy() {
 func (cs *ConnectSdp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 	//rsp := msg.(*RspProto)
 }
-func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed, processorID int, msgID int32, msg interface{}, err error) {
 	if len(data) < 4 {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 	msgLen := SdpLen(data)
 	codeType := msgLen >> 24 & 0x01
 	msgLen = msgLen & 0xFFFFFF
 	if msgLen < MinMsgLen || msgLen > MaxMsgLen {
-		return int(msgLen), 0, nil, fmt.Errorf("message length is wrong;len=%d;", msgLen)
+		return int(msgLen), 0, 0, nil, fmt.Errorf("message length is wrong;len=%d;", msgLen)
 	}
 	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
+		return 0, 0, 0, nil, nil
 	}
 
 	rsp := &RspProto{}
@@ -113,13 +110,10 @@ func (cs *ConnectSdp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgI
 		err = Decode(rsp, data[4:msgLen])
 	}
 	if err != nil {
-		return int(msgLen), 0, nil, err
+		return int(msgLen), 0, 0, nil, err
 	}
 
-	return int(msgLen), 0, rsp, nil
-}
-func (service *ConnectSdp) HashHandleThread(sess *Session) int {
-	return -1
+	return int(msgLen), 0, 0, rsp, nil
 }
 func (service *ConnectSdp) SessionOpen(sess *Session) {
 
