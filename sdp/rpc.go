@@ -71,7 +71,7 @@ func (rpc *RPC) ASyncCallWithCallbackAndException(funcName string, params ...int
 		return ErrNoCallbackFunc
 	}
 	parma1Type := reflect.TypeOf(params[len(params)-1])
-	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int32 {
+	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int {
 		return ErrNoCallbackFunc
 	}
 
@@ -101,7 +101,7 @@ func (rpc *RPC) ASyncCallWithException(funcName string, params ...interface{}) e
 		return ErrNoCallbackFunc
 	}
 	parma1Type := reflect.TypeOf(params[len(params)-1])
-	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int32 {
+	if parma1Type.Kind() != reflect.Func || parma1Type.NumIn() != 1 || parma1Type.In(0).Kind() != reflect.Int {
 		return ErrNoCallbackFunc
 	}
 
@@ -135,27 +135,52 @@ func (rpc *RPC) asynccall(rpcReq rpcRequest, params ...interface{}) error {
 	}
 	rpcReq.req.ReqPayload = string(sdp.buf)
 
-	rpc.Imp().(*RPCImp).pushRequest(rpcReq)
+	if !rpc.Imp().(*RPCImp).pushRequest(rpcReq) {
+		return fmt.Errorf("request queue is full")
+	}
 	rpc.ReqSequence++
 
 	return rpc.Send(PackSdpProtocol(Encode(rpcReq.req)))
 }
 
 type RPCImp struct {
-	requests map[uint32]rpcRequest
+	reqChan  chan *rpcRequest
+	requests map[uint32]*rpcRequest
 	conn     *Connect
 }
 
 func (rpc *RPCImp) pushRequest(req rpcRequest) bool {
-	rpc.requests[req.req.RequestId] = req
+	to := time.NewTimer(100 * time.Millisecond)
+	select {
+	case rpc.reqChan <- &req:
+		to.Stop()
+		return true
+	case <-to.C:
+		to.Stop()
+		return false
+	}
 	return true
 }
 
 func (rpc *RPCImp) Init() bool {
-	rpc.requests = make(map[uint32]rpcRequest)
+	rpc.reqChan = make(chan *rpcRequest, 1024)
+	rpc.requests = make(map[uint32]*rpcRequest)
 	return true
 }
+
+func (rpc *RPCImp) fetchReq() {
+	for {
+		select {
+		case req := <-rpc.reqChan:
+			rpc.requests[req.req.RequestId] = req
+		default:
+			return
+		}
+	}
+}
 func (rpc *RPCImp) Loop() {
+	rpc.fetchReq()
+
 	now := time.Now().Unix()
 	for k, v := range rpc.requests {
 		if v.timeout < now {

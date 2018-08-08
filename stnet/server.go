@@ -115,6 +115,8 @@ func (svr *Server) Stop() {
 			s.destroy()
 		}
 	}
+	time.Sleep(time.Second) //wait a second for processing destroy messages
+
 	//stop logic work
 	atomic.CompareAndSwapUint32(&svr.isclose, 0, 1)
 	svr.wg.Wait()

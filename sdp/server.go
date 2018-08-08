@@ -19,6 +19,7 @@ func (svr *SdpServer) AddRpcClient(name, servicename, address string, threadId i
 	if err != nil {
 		return nil, err
 	}
+	rpcimp.conn = ct
 	return &RPC{ct, rpcimp, servicename, 1}, nil
 }
 

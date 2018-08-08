@@ -105,9 +105,11 @@ func (service *Service) destroy() {
 	if service.listen != nil {
 		service.listen.Close()
 	}
+	service.mutex.Lock()
 	for _, v := range service.connects {
 		v.destroy()
 	}
+	service.mutex.Unlock()
 	for i := 0; i < msgProcessorThreadsNum; i++ {
 		select {
 		case service.messageQ[i+1] <- sessionMessage{nil, System, 0, nil, nil}:
