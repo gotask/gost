@@ -14,11 +14,14 @@ import (
 	"bufio"
 
 	"golang.org/x/crypto/ssh"
+	"net"
 )
 
 func SSHNew(user, password, ip_port string) (*ssh.Client, error) {
 	PassWd := []ssh.AuthMethod{ssh.Password(password)}
-	Conf := ssh.ClientConfig{User: user, Auth: PassWd}
+	Conf := ssh.ClientConfig{User: user, Auth: PassWd, HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		return nil
+	}}
 	return ssh.Dial("tcp", ip_port, &Conf)
 }
 
@@ -36,6 +39,9 @@ func SSHFile(user, keyFilePath, ip_port string) (*ssh.Client, error) {
 		User: user,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			return nil
 		},
 	}
 
