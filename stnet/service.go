@@ -7,19 +7,27 @@ import (
 	"time"
 )
 
-var (
-	msgProcessorThreadsNum = 128
-)
+type Service struct {
+	Name      string
+	listen    *Listener
+	imp       ServiceImp
+	messageQ  []chan sessionMessage
+	isClose   bool
+	connects  map[uint64]*Connect
+	mutex     sync.Mutex
+	netSignal *[]chan int
+	threadId  int
+}
 
-func newService(name, address string, imp ServiceImp) (*Service, error) {
-	if imp == nil {
+func newService(name, address string, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
+	if imp == nil || netSignal == nil {
 		return nil, fmt.Errorf("ServiceImp should not be nil")
 	}
-	msgTh := make([]chan sessionMessage, msgProcessorThreadsNum+1)
-	for i := 0; i <= msgProcessorThreadsNum; i++ {
+	msgTh := make([]chan sessionMessage, ProcessorThreadsNum)
+	for i := 0; i < ProcessorThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}}
+	svr := &Service{name, nil, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
 
 	if address != "" {
 		lis, err := NewListener(address, svr)
@@ -39,30 +47,29 @@ func (service *Service) handlePanic() {
 	}
 }
 
-func (service *Service) messageThread(idx int) int {
+func (service *Service) messageThread(idx int) {
 	defer service.handlePanic()
 
 	for i := 0; i < 1024; i++ {
 		select {
 		case msg := <-service.messageQ[idx]:
-			if msg.DtType == Data {
+			if msg.Err != nil {
+				service.imp.HandleError(msg.Sess, msg.Err)
+			} else if msg.DtType == Open {
+				service.imp.SessionOpen(msg.Sess)
+			} else if msg.DtType == Close {
+				service.imp.SessionClose(msg.Sess)
+			} else if msg.DtType == Data {
 				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
+			} else if msg.DtType == System {
+			} else {
+				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
 			}
 		default:
-			return i
+			return
 		}
 	}
-	return 1024
-}
-
-type Service struct {
-	Name     string
-	listen   *Listener
-	imp      ServiceImp
-	messageQ []chan sessionMessage
-	isClose  bool
-	connects map[uint64]*Connect
-	mutex    sync.Mutex
+	return
 }
 
 type sessionMessage struct {
@@ -81,24 +88,6 @@ func (service *Service) loop() {
 	defer service.handlePanic()
 
 	service.imp.Loop()
-	for i := 0; i < 1024; i++ {
-		select {
-		case msg := <-service.messageQ[0]:
-			if msg.Err != nil {
-				service.imp.HandleError(msg.Sess, msg.Err)
-			} else if msg.DtType == Open {
-				service.imp.SessionOpen(msg.Sess)
-			} else if msg.DtType == Close {
-				service.imp.SessionClose(msg.Sess)
-			} else if msg.DtType == Data {
-				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
-			} else {
-				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
-			}
-		default:
-			return
-		}
-	}
 }
 func (service *Service) destroy() {
 	service.isClose = true
@@ -110,9 +99,9 @@ func (service *Service) destroy() {
 		v.destroy()
 	}
 	service.mutex.Unlock()
-	for i := 0; i < msgProcessorThreadsNum; i++ {
+	for i := 0; i < ProcessorThreadsNum; i++ {
 		select {
-		case service.messageQ[i+1] <- sessionMessage{nil, System, 0, nil, nil}:
+		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil}:
 		default:
 		}
 	}
@@ -122,8 +111,8 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	if e != nil || th < 0 || th > msgProcessorThreadsNum {
-		th = 0
+	if e != nil || th < 0 || th >= ProcessorThreadsNum {
+		th = service.threadId
 	}
 	to := time.NewTimer(time.Second)
 	select {
@@ -132,12 +121,18 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
 	to.Stop()
+
+	//wakeup logic thread
+	select {
+	case (*service.netSignal)[th] <- 1:
+	default:
+	}
 	return lenParsed
 }
 func (service *Service) SessionEvent(sess *Session, cmd CMDType) {
 	to := time.NewTimer(time.Second)
 	select {
-	case service.messageQ[0] <- sessionMessage{sess, cmd, 0, nil, nil}:
+	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil}:
 	case <-to.C:
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
 	}

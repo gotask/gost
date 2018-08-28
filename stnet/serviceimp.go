@@ -11,7 +11,7 @@ type ServiceImp interface {
 
 	//protocol parsed
 	//lenParsed is the length readed from 'data'.
-	//processorID is the thread who process this msg;if processorID <= 0, it only use main thread of the service.it should between 0-128;0 is main processor.
+	//processorID is the thread who process this msg;if processorID < 0, it only use main thread of the service.it should between 0-127.
 	//msgID and msg are messages parsed from data.
 	//when lenParsed <= 0 or msgID < 0,msg and err will be ignored.
 	Unmarshal(sess *Session, data []byte) (lenParsed, processorID int, msgID int32, msg interface{}, err error)
