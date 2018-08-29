@@ -143,7 +143,7 @@ func newConnect(service *Service, name, address string, reconnectmsec int) (*Con
 	if service == nil {
 		return nil, fmt.Errorf("service should not be nil")
 	}
-	conn := &Connect{service, NewConnector(address, reconnectmsec, service), name}
+	conn := &Connect{NewConnector(address, reconnectmsec, service), name, service}
 	service.mutex.Lock()
 	service.connects[conn.GetID()] = conn
 	service.mutex.Unlock()
@@ -151,18 +151,18 @@ func newConnect(service *Service, name, address string, reconnectmsec int) (*Con
 }
 
 type Connect struct {
-	*Service
 	*Connector
-	Name string
+	Name   string
+	master *Service
 }
 
 func (ct *Connect) Close() {
 	ct.destroy()
-	ct.mutex.Lock()
-	if _, ok := ct.connects[ct.GetID()]; ok {
-		delete(ct.connects, ct.GetID())
+	ct.master.mutex.Lock()
+	if _, ok := ct.master.connects[ct.GetID()]; ok {
+		delete(ct.master.connects, ct.GetID())
 	}
-	ct.mutex.Unlock()
+	ct.master.mutex.Unlock()
 }
 func (ct *Connect) destroy() {
 	ct.Connector.Close()
