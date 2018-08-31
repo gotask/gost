@@ -19,7 +19,7 @@ type Service struct {
 	threadId  int
 }
 
-func newService(name, address string, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
+func newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
 	if imp == nil || netSignal == nil {
 		return nil, fmt.Errorf("ServiceImp should not be nil")
 	}
@@ -30,7 +30,7 @@ func newService(name, address string, imp ServiceImp, netSignal *[]chan int, thr
 	svr := &Service{name, nil, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
 
 	if address != "" {
-		lis, err := NewListener(address, svr)
+		lis, err := NewListener(address, svr, heartbeat)
 		if err != nil {
 			return nil, err
 		}
@@ -59,6 +59,8 @@ func (service *Service) messageThread(idx int) {
 				service.imp.SessionOpen(msg.Sess)
 			} else if msg.DtType == Close {
 				service.imp.SessionClose(msg.Sess)
+			} else if msg.DtType == HeartBeat {
+				service.imp.HeartBeatTimeOut(msg.Sess)
 			} else if msg.DtType == Data {
 				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
 			} else if msg.DtType == System {
@@ -154,6 +156,10 @@ type Connect struct {
 	*Connector
 	Name   string
 	master *Service
+}
+
+func (ct *Connect) Imp() ServiceImp {
+	return ct.master.imp
 }
 
 func (ct *Connect) Close() {

@@ -40,9 +40,10 @@ func NewServer(name string, loopmsec uint32) *Server {
 
 //must be called before server started.
 //address could be null,then you get a service without listen.
-func (svr *Server) AddService(name, address string, imp ServiceImp, threadId int) (*Service, error) {
+//when heartbeat=0,heartbeat will be close.
+func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
 	threadId = threadId % ProcessorThreadsNum
-	s, e := newService(name, address, imp, &svr.netSignal, threadId)
+	s, e := newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
 	if e != nil {
 		return nil, e
 	}
@@ -52,7 +53,7 @@ func (svr *Server) AddService(name, address string, imp ServiceImp, threadId int
 
 //must be called before server started.
 func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, threadId int) (*Connect, error) {
-	cs, e := svr.AddService(name, "", imp, threadId)
+	cs, e := svr.AddService(name, "", 0, imp, threadId)
 	if e != nil {
 		return nil, e
 	}

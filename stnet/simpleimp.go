@@ -32,6 +32,9 @@ func (service *ServiceEcho) SessionOpen(sess *Session) {
 func (service *ServiceEcho) SessionClose(sess *Session) {
 
 }
+func (service *ServiceEcho) HeartBeatTimeOut(sess *Session) {
+
+}
 func (service *ServiceEcho) HandleError(sess *Session, err error) {
 	SysLog.Error(err.Error())
 }
@@ -63,6 +66,9 @@ func (service *ServiceHttp) SessionOpen(sess *Session) {
 
 }
 func (service *ServiceHttp) SessionClose(sess *Session) {
+
+}
+func (service *ServiceHttp) HeartBeatTimeOut(sess *Session) {
 
 }
 func (service *ServiceHttp) HandleError(sess *Session, err error) {

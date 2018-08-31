@@ -16,6 +16,7 @@ const (
 	Data CMDType = 0 + iota
 	Open
 	Close
+	HeartBeat
 	System
 )
 
@@ -54,32 +55,34 @@ const (
 var GlobalSessionID uint64
 
 type Session struct {
-	parser  MsgParse
-	id      uint64
-	socket  net.Conn
-	writer  chan []byte
-	hander  chan []byte
-	closer  chan int
-	wg      *sync.WaitGroup
-	onclose FuncOnClose
-	isclose uint32
+	parser    MsgParse
+	id        uint64
+	socket    net.Conn
+	writer    chan []byte
+	hander    chan []byte
+	closer    chan int
+	wg        *sync.WaitGroup
+	onclose   FuncOnClose
+	isclose   uint32
+	heartbeat uint32
 
 	UserData interface{}
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
+func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, heartbeat uint32) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:      atomic.AddUint64(&GlobalSessionID, 1),
-		socket:  con,
-		writer:  make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:  make(chan []byte, RecvListLen),
-		closer:  make(chan int),
-		wg:      &sync.WaitGroup{},
-		parser:  msgparse,
-		onclose: onclose,
+		id:        atomic.AddUint64(&GlobalSessionID, 1),
+		socket:    con,
+		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:    make(chan []byte, RecvListLen),
+		closer:    make(chan int),
+		wg:        &sync.WaitGroup{},
+		parser:    msgparse,
+		onclose:   onclose,
+		heartbeat: heartbeat,
 	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
@@ -93,13 +96,14 @@ func newConnSession(msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 		return nil, ErrMsgParseNil
 	}
 	sess := &Session{
-		id:      atomic.AddUint64(&GlobalSessionID, 1),
-		writer:  make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:  make(chan []byte, RecvListLen),
-		wg:      &sync.WaitGroup{},
-		parser:  msgparse,
-		onclose: onclose,
-		isclose: 1,
+		id:        atomic.AddUint64(&GlobalSessionID, 1),
+		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:    make(chan []byte, RecvListLen),
+		wg:        &sync.WaitGroup{},
+		parser:    msgparse,
+		onclose:   onclose,
+		isclose:   1,
+		heartbeat: 0,
 	}
 	return sess, nil
 }
@@ -229,11 +233,21 @@ func (s *Session) dorecv() {
 func (s *Session) dohand() {
 	defer s.handlePanic()
 
+	wt := time.Second * time.Duration(s.heartbeat)
+	ht := time.NewTimer(wt)
+	if s.heartbeat == 0 {
+		ht.Stop()
+	}
 	var tempBuf []byte
 	for {
+		if s.heartbeat > 0 {
+			ht.Reset(wt)
+		}
 		select {
 		case <-s.closer:
 			return
+		case <-ht.C:
+			s.parser.SessionEvent(s, HeartBeat)
 		case buf := <-s.hander:
 			if tempBuf != nil {
 				buf = append(tempBuf, buf...)
@@ -251,6 +265,7 @@ func (s *Session) dohand() {
 			}
 		}
 	}
+	ht.Stop()
 }
 
 func asyncDo(fn func(), wg *sync.WaitGroup) {

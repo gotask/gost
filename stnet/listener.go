@@ -7,16 +7,17 @@ import (
 )
 
 type Listener struct {
-	isclose bool
-	address string
-	lst     net.Listener
+	isclose   bool
+	address   string
+	lst       net.Listener
+	heartbeat uint32
 
 	sessMap      map[uint64]*Session
 	sessMapMutex sync.RWMutex
 	waitExit     sync.WaitGroup
 }
 
-func NewListener(address string, msgparse MsgParse) (*Listener, error) {
+func NewListener(address string, msgparse MsgParse, heartbeat uint32) (*Listener, error) {
 	if msgparse == nil {
 		return nil, fmt.Errorf("MsgParse should not be nil")
 	}
@@ -27,10 +28,11 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 	}
 
 	lis := &Listener{
-		isclose: false,
-		address: address,
-		lst:     ls,
-		sessMap: make(map[uint64]*Session),
+		isclose:   false,
+		address:   address,
+		lst:       ls,
+		heartbeat: heartbeat,
+		sessMap:   make(map[uint64]*Session),
 	}
 
 	go func() {
@@ -48,7 +50,7 @@ func NewListener(address string, msgparse MsgParse) (*Listener, error) {
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()
 				lis.sessMapMutex.Unlock()
-			})
+			}, heartbeat)
 			lis.sessMap[sess.id] = sess
 			lis.sessMapMutex.Unlock()
 		}

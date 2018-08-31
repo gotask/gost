@@ -8,6 +8,7 @@ type ServiceImp interface {
 	HandleError(*Session, error)
 	SessionOpen(sess *Session)
 	SessionClose(sess *Session)
+	HeartBeatTimeOut(sess *Session)
 
 	//protocol parsed
 	//lenParsed is the length readed from 'data'.
