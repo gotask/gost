@@ -52,12 +52,12 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 }
 
 //must be called before server started.
-func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, threadId int) (*Connect, error) {
+func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, onconnected FuncOnOpen, threadId int) (*Connect, error) {
 	cs, e := svr.AddService(name, "", 0, imp, threadId)
 	if e != nil {
 		return nil, e
 	}
-	ct, err := newConnect(cs, name, address, reconnectmsec)
+	ct, err := newConnect(cs, name, address, reconnectmsec, onconnected)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Servi
 }
 
 //can be called when server is running
-func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int) (*Connect, error) {
-	c, e := newConnect(service, name, address, reconnectmsec)
+func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, onconnected FuncOnOpen) (*Connect, error) {
+	c, e := newConnect(service, name, address, reconnectmsec, onconnected)
 	if e != nil {
 		return nil, e
 	}

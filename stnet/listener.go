@@ -45,7 +45,7 @@ func NewListener(address string, msgparse MsgParse, heartbeat uint32) (*Listener
 
 			lis.sessMapMutex.Lock()
 			lis.waitExit.Add(1)
-			sess, _ := NewSession(conn, msgparse, func(con *Session) {
+			sess, _ := NewSession(conn, msgparse, nil, func(con *Session) {
 				lis.sessMapMutex.Lock()
 				delete(lis.sessMap, con.id)
 				lis.waitExit.Done()

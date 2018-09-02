@@ -17,7 +17,7 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connector {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse, onconnected FuncOnOpen) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
 	}
@@ -29,7 +29,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse) *Connect
 		wg:              &sync.WaitGroup{},
 	}
 
-	conn.Session, _ = newConnSession(msgparse, func(*Session) {
+	conn.Session, _ = newConnSession(msgparse, onconnected, func(*Session) {
 		conn.sessCloseSignal <- 1
 	})
 

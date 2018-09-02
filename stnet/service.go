@@ -141,11 +141,11 @@ func (service *Service) SessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func newConnect(service *Service, name, address string, reconnectmsec int) (*Connect, error) {
+func newConnect(service *Service, name, address string, reconnectmsec int, onconnected FuncOnOpen) (*Connect, error) {
 	if service == nil {
 		return nil, fmt.Errorf("service should not be nil")
 	}
-	conn := &Connect{NewConnector(address, reconnectmsec, service), name, service}
+	conn := &Connect{NewConnector(address, reconnectmsec, service, onconnected), name, service}
 	service.mutex.Lock()
 	service.connects[conn.GetID()] = conn
 	service.mutex.Unlock()

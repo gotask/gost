@@ -38,6 +38,9 @@ type MsgParse interface {
 	SessionEvent(sess *Session, cmd CMDType)
 }
 
+//this will be called when session open
+type FuncOnOpen func(*Session)
+
 //this will be called when session closed
 type FuncOnClose func(*Session)
 
@@ -62,6 +65,7 @@ type Session struct {
 	hander    chan []byte
 	closer    chan int
 	wg        *sync.WaitGroup
+	onopen    FuncOnOpen
 	onclose   FuncOnClose
 	isclose   uint32
 	heartbeat uint32
@@ -69,7 +73,7 @@ type Session struct {
 	UserData interface{}
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, heartbeat uint32) (*Session, error) {
+func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, heartbeat uint32) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -81,6 +85,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, heartbeat 
 		closer:    make(chan int),
 		wg:        &sync.WaitGroup{},
 		parser:    msgparse,
+		onopen:    onopen,
 		onclose:   onclose,
 		heartbeat: heartbeat,
 	}
@@ -91,7 +96,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onclose FuncOnClose, heartbeat 
 	return sess, nil
 }
 
-func newConnSession(msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
+func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -101,6 +106,7 @@ func newConnSession(msgparse MsgParse, onclose FuncOnClose) (*Session, error) {
 		hander:    make(chan []byte, RecvListLen),
 		wg:        &sync.WaitGroup{},
 		parser:    msgparse,
+		onopen:    onopen,
 		onclose:   onclose,
 		isclose:   1,
 		heartbeat: 0,
@@ -208,6 +214,9 @@ func (s *Session) dorecv() {
 		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 	}()
 
+	if s.onopen != nil {
+		s.onopen(s)
+	}
 	s.parser.SessionEvent(s, Open)
 
 	msgbuf := bp.Alloc(MsgBuffSize)
