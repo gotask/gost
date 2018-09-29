@@ -166,4 +166,5 @@ func (svr *Server) Stop() {
 		}
 	}
 	SysLog.Info("server closed.")
+	SysLog.Close()
 }
