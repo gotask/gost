@@ -15,6 +15,7 @@ type Connector struct {
 	closeflag       bool
 	sessCloseSignal chan int
 	wg              *sync.WaitGroup
+	mutex           *sync.Mutex
 }
 
 func NewConnector(address string, reconnectmsec int, msgparse MsgParse, onconnected FuncOnOpen) *Connector {
@@ -27,6 +28,7 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse, onconnec
 		address:         address,
 		reconnectMSec:   reconnectmsec,
 		wg:              &sync.WaitGroup{},
+		mutex:           &sync.Mutex{},
 	}
 
 	conn.Session, _ = newConnSession(msgparse, onconnected, func(*Session) {
@@ -51,7 +53,12 @@ func (conn *Connector) connect() {
 			continue
 		}
 
+		conn.mutex.Lock() //maybe already be closed
+		if conn.closeflag {
+			break
+		}
 		conn.Session.restart(cn)
+		conn.mutex.Unlock()
 
 		<-conn.sessCloseSignal
 		if conn.reconnectMSec <= 0 || conn.closeflag {
@@ -71,8 +78,10 @@ func (c *Connector) Close() {
 	if c.IsClose() {
 		return
 	}
+	c.mutex.Lock()
 	c.closeflag = true
 	c.Session.Close()
+	c.mutex.Unlock()
 	c.wg.Wait()
 }
 
