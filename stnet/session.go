@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"net"
-	"runtime/debug"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,10 +39,10 @@ type MsgParse interface {
 }
 
 //this will be called when session open
-type FuncOnOpen func(*Session)
+type FuncOnOpen = func(*Session)
 
 //this will be called when session closed
-type FuncOnClose func(*Session)
+type FuncOnClose = func(*Session)
 
 //message recv buffer size
 const (
@@ -117,7 +117,9 @@ func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose) (
 func (s *Session) handlePanic() {
 	if err := recover(); err != nil {
 		SysLog.Critical("panic error: %v", err)
-		SysLog.Critical("panic stack: %s", string(debug.Stack()))
+		buf := make([]byte, 16384)
+		buf = buf[:runtime.Stack(buf, true)]
+		SysLog.Critical("panic stack: %s", string(buf))
 		//close socket
 		s.socket.Close()
 	}
@@ -204,7 +206,9 @@ func (s *Session) dorecv() {
 	defer func() {
 		if err := recover(); err != nil {
 			SysLog.Critical("panic error: %v", err)
-			SysLog.Critical("panic stack: %s", string(debug.Stack()))
+			buf := make([]byte, 16384)
+			buf = buf[:runtime.Stack(buf, true)]
+			SysLog.Critical("panic stack: %s", string(buf))
 		}
 		//close socket
 		s.socket.Close()

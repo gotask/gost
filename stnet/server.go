@@ -9,7 +9,7 @@ import (
 
 //max 128 threads in server.
 var (
-	ProcessorThreadsNum = 128
+	ProcessorThreadsNum = 32
 )
 
 type Server struct {
@@ -122,11 +122,14 @@ func (svr *Server) Start() error {
 		go func(idx int, ss []*Service) {
 			svr.wg.Add(1)
 			for svr.isclose == 0 {
+				nmsg := 0
 				for _, s := range ss {
-					s.messageThread(idx)
+					nmsg += s.messageThread(idx)
 				}
-				select { //wait for new message
-				case <-svr.netSignal[idx]:
+				if nmsg == 0 {
+					select { //wait for new message
+					case <-svr.netSignal[idx]:
+					}
 				}
 			}
 			SysLog.Info("%d thread quit.", idx)

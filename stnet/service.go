@@ -2,7 +2,7 @@ package stnet
 
 import (
 	"fmt"
-	"runtime/debug"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -43,13 +43,16 @@ func newService(name, address string, heartbeat uint32, imp ServiceImp, netSigna
 func (service *Service) handlePanic() {
 	if err := recover(); err != nil {
 		SysLog.Critical("panic error: %v", err)
-		SysLog.Critical("panic stack: %s", string(debug.Stack()))
+		buf := make([]byte, 16384)
+		buf = buf[:runtime.Stack(buf, true)]
+		SysLog.Critical("panic stack: %s", string(buf))
 	}
 }
 
-func (service *Service) messageThread(idx int) {
+func (service *Service) messageThread(idx int) int {
 	defer service.handlePanic()
 
+	n := 0
 	for i := 0; i < 1024; i++ {
 		select {
 		case msg := <-service.messageQ[idx]:
@@ -67,11 +70,12 @@ func (service *Service) messageThread(idx int) {
 			} else {
 				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
 			}
+			n++
 		default:
-			return
+			return n
 		}
 	}
-	return
+	return n
 }
 
 type sessionMessage struct {
@@ -109,12 +113,15 @@ func (service *Service) destroy() {
 	}
 }
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
-	lenParsed, th, msgid, msg, e := service.imp.Unmarshal(sess, data)
+	lenParsed, msgid, msg, e := service.imp.Unmarshal(sess, data)
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	if e != nil || th < 0 || th >= ProcessorThreadsNum {
+	th := service.imp.HashProcessor(sess, msgid, msg)
+	if e != nil || th < 0 {
 		th = service.threadId
+	} else if th >= ProcessorThreadsNum {
+		th = th % ProcessorThreadsNum
 	}
 	to := time.NewTimer(time.Second)
 	select {
