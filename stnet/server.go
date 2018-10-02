@@ -40,7 +40,7 @@ func NewServer(name string, loopmsec uint32) *Server {
 
 //must be called before server started.
 //address could be null,then you get a service without listen.
-//when heartbeat=0,heartbeat will be close.
+//when heartbeat(second)=0,heartbeat will be close.
 func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
 	threadId = threadId % ProcessorThreadsNum
 	s, e := newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
@@ -52,12 +52,12 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 }
 
 //must be called before server started.
-func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, onconnected FuncOnOpen, threadId int) (*Connect, error) {
+func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, threadId int) (*Connect, error) {
 	cs, e := svr.AddService(name, "", 0, imp, threadId)
 	if e != nil {
 		return nil, e
 	}
-	ct, err := newConnect(cs, name, address, reconnectmsec, onconnected)
+	ct, err := newConnect(cs, name, address, reconnectmsec, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +65,8 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Servi
 }
 
 //can be called when server is running
-func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, onconnected FuncOnOpen) (*Connect, error) {
-	c, e := newConnect(service, name, address, reconnectmsec, onconnected)
+func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) (*Connect, error) {
+	c, e := newConnect(service, name, address, reconnectmsec, userdata)
 	if e != nil {
 		return nil, e
 	}

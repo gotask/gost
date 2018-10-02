@@ -18,7 +18,7 @@ type Connector struct {
 	mutex           *sync.Mutex
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse, onconnected FuncOnOpen) *Connector {
+func NewConnector(address string, reconnectmsec int, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
 	}
@@ -31,9 +31,9 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse, onconnec
 		mutex:           &sync.Mutex{},
 	}
 
-	conn.Session, _ = newConnSession(msgparse, onconnected, func(*Session) {
+	conn.Session, _ = newConnSession(msgparse, nil, func(*Session) {
 		conn.sessCloseSignal <- 1
-	})
+	}, userdata)
 
 	go conn.connect()
 

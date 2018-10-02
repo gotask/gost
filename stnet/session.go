@@ -96,7 +96,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 	return sess, nil
 }
 
-func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose) (*Session, error) {
+func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, userdata interface{}) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -110,6 +110,7 @@ func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose) (
 		onclose:   onclose,
 		isclose:   1,
 		heartbeat: 0,
+		UserData:  userdata,
 	}
 	return sess, nil
 }
