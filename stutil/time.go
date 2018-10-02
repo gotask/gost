@@ -8,8 +8,16 @@ func Unix2Time(sec int64, nsec int64) time.Time {
 	return time.Unix(sec, nsec)
 }
 
-func Time2Unix(t time.Time) int64 {
+func Time2UnixS(t time.Time) int64 {
 	return t.Unix()
+}
+
+func Time2UnixM(t time.Time) int64 {
+	return t.UnixNano() / 1e6
+}
+
+func Time2UnixN(t time.Time) int64 {
+	return t.UnixNano()
 }
 
 func TimeFormat(t time.Time) string {

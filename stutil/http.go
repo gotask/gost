@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -62,6 +63,16 @@ func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
 	return req
 }
 
+func (req *HttpRequest) FormJson(s string) *HttpRequest {
+	if len(s) == 0 {
+		req.binData = nil
+	} else {
+		req.binData = []byte(s)
+	}
+
+	return req
+}
+
 func (req *HttpRequest) Proxy(p string) *HttpRequest {
 	req.proxy = p
 	return req
@@ -71,7 +82,8 @@ func (req *HttpRequest) SkipVerify() *HttpRequest {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
-	req.client = &http.Client{Transport: tr}
+	jar, _ := cookiejar.New(nil)
+	req.client = &http.Client{Transport: tr, Jar: jar}
 	return req
 }
 
@@ -81,6 +93,7 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 		return nil, nil, e
 	}
 	resp, err = req.client.Do(request)
+	//	fmt.Println(request.Cookies())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -99,8 +112,7 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 
 func (req *HttpRequest) build(method string, sUrl string) (request *http.Request, err error) {
 	if len(req.binData) != 0 {
-		pr := ioutil.NopCloser(bytes.NewReader(req.binData))
-		request, err = http.NewRequest(method, sUrl, pr)
+		request, err = http.NewRequest(method, sUrl, bytes.NewReader(req.binData))
 	} else if len(req.urlValue) != 0 {
 		pr := ioutil.NopCloser(strings.NewReader(req.urlValue.Encode()))
 		request, err = http.NewRequest(method, sUrl, pr)
@@ -131,6 +143,11 @@ func (req *HttpRequest) build(method string, sUrl string) (request *http.Request
 
 	if req.client == nil {
 		req.client = new(http.Client)
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return nil, err
+		}
+		req.client.Jar = jar
 	}
 	if req.proxy != "" {
 		u, e := url.Parse(req.proxy)

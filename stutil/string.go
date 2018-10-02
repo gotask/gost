@@ -53,3 +53,25 @@ func StringToFloatList(s, sep string) []float64 {
 	}
 	return fl
 }
+func StringToKVMap(s, sep1, sep2 string) map[string]string {
+	sl := strings.Split(s, sep2)
+	if sl == nil {
+		return nil
+	}
+	mp := make(map[string]string)
+	for _, v := range sl {
+		km := strings.Split(v, sep1)
+		if len(km) != 2 {
+			return mp
+		}
+		mp[km[0]] = km[1]
+	}
+	return mp
+}
+
+func IntToString(i int64) string {
+	return strconv.FormatInt(i, 10)
+}
+func UintToString(i uint64) string {
+	return strconv.FormatUint(i, 10)
+}
