@@ -3,6 +3,7 @@ package stnet
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"net/http"
 )
 
@@ -59,8 +60,10 @@ func (service *ServiceHttp) HandleMessage(sess *Session, msgID uint32, msg inter
 }
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
-	if err != nil {
+	if err == io.EOF { //read partly
 		return 0, 0, nil, nil
+	} else {
+		return len(data), 0, nil, err
 	}
 	return len(data), 0, req, nil
 }

@@ -15,14 +15,14 @@ import (
 	"time"
 )
 
-var (
+/*var (
 	DefaultLog *Logger
 )
 
 func init() {
 	DefaultLog = NewLogger()
-	DefaultLog.SetFileLevel(DEBUG, "default.log", 1024*1024*100, 1, 30) //one file 100M, 10 files max one day
-}
+	DefaultLog.SetFileLevel(DEBUG, "default.log", 1024*1024*100, 1, 10) //one file 100M, 10 files max one day
+}*/
 
 type Level int
 
@@ -101,7 +101,7 @@ func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 	pc, file, lineno, ok := runtime.Caller(3)
 	src := ""
 	if ok {
-		src = fmt.Sprintf("%s:%s:%d", path.Base(file), runtime.FuncForPC(pc).Name(), lineno)
+		src = fmt.Sprintf("%s:%s:%d", path.Base(file), path.Base(runtime.FuncForPC(pc).Name()), lineno)
 	}
 
 	msg := format
