@@ -148,34 +148,31 @@ func (service *Service) SessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func newConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) (*Connect, error) {
-	if service == nil {
-		return nil, fmt.Errorf("service should not be nil")
-	}
+func newConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) *Connect {
 	conn := &Connect{NewConnector(address, reconnectmsec, service, userdata), name, service}
 	service.mutex.Lock()
 	service.connects[conn.GetID()] = conn
 	service.mutex.Unlock()
-	return conn, nil
+	return conn
 }
 
 type Connect struct {
 	*Connector
 	Name   string
-	master *Service
+	Master *Service
 }
 
 func (ct *Connect) Imp() ServiceImp {
-	return ct.master.imp
+	return ct.Master.imp
 }
 
 func (ct *Connect) Close() {
 	ct.destroy()
-	ct.master.mutex.Lock()
-	if _, ok := ct.master.connects[ct.GetID()]; ok {
-		delete(ct.master.connects, ct.GetID())
+	ct.Master.mutex.Lock()
+	if _, ok := ct.Master.connects[ct.GetID()]; ok {
+		delete(ct.Master.connects, ct.GetID())
 	}
-	ct.master.mutex.Unlock()
+	ct.Master.mutex.Unlock()
 }
 func (ct *Connect) destroy() {
 	ct.Connector.Close()

@@ -215,6 +215,7 @@ func (s *Session) dorecv() {
 		s.socket.Close()
 		close(s.closer)
 		s.wg.Wait()
+		SysLog.Debug("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 		s.onclose(s)
 		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 	}()

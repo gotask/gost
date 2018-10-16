@@ -45,6 +45,7 @@ func (conn *Connector) connect() {
 	for !conn.closeflag {
 		cn, err := net.Dial("tcp", conn.address)
 		if err != nil {
+			conn.parser.SessionEvent(conn.Session, Close)
 			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
 			if conn.reconnectMSec <= 0 || conn.closeflag {
 				break
@@ -70,6 +71,15 @@ func (conn *Connector) connect() {
 	conn.wg.Done()
 }
 
+func (cnt *Connector) ChangeAddr(addr string) {
+	cnt.address = addr
+}
+func (cnt *Connector) Addr() string {
+	return cnt.address
+}
+func (cnt *Connector) ReconnectMSec() int {
+	return cnt.reconnectMSec
+}
 func (cnt *Connector) IsConnected() bool {
 	return !cnt.Session.IsClose()
 }
@@ -83,6 +93,7 @@ func (c *Connector) Close() {
 	c.Session.Close()
 	c.mutex.Unlock()
 	c.wg.Wait()
+	SysLog.Debug("connection close, remote addr: %s", c.address)
 }
 
 func (c *Connector) IsClose() bool {

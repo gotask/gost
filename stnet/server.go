@@ -57,20 +57,12 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Servi
 	if e != nil {
 		return nil, e
 	}
-	ct, err := newConnect(cs, name, address, reconnectmsec, nil)
-	if err != nil {
-		return nil, err
-	}
-	return ct, nil
+	return newConnect(cs, name, address, reconnectmsec, nil), nil
 }
 
 //can be called when server is running
-func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) (*Connect, error) {
-	c, e := newConnect(service, name, address, reconnectmsec, userdata)
-	if e != nil {
-		return nil, e
-	}
-	return c, nil
+func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) *Connect {
+	return newConnect(service, name, address, reconnectmsec, userdata)
 }
 
 func (svr *Server) Start() error {
