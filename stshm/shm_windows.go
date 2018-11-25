@@ -1,5 +1,5 @@
 // shm_windows.go
-package Shm
+package stshm
 
 import (
 	"fmt"

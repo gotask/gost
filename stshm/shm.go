@@ -1,5 +1,5 @@
 // shm.go
-package Shm
+package stshm
 
 type Shm interface {
 	Data() []byte

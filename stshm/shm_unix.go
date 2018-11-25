@@ -1,7 +1,7 @@
 // shm_unix.go
 // +build darwin dragonfly freebsd linux openbsd solaris netbsd
 
-package Shm
+package stshm
 
 import (
 	"os"
