@@ -64,6 +64,7 @@ func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
 }
 
 func (req *HttpRequest) FormJson(s string) *HttpRequest {
+	req.Header("Content-Type", HTTPJSONContentType)
 	if len(s) == 0 {
 		req.binData = nil
 	} else {
@@ -92,6 +93,7 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 	if e != nil {
 		return nil, nil, e
 	}
+
 	resp, err = req.client.Do(request)
 	//	fmt.Println(request.Cookies())
 	if err != nil {
@@ -110,9 +112,17 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 	return
 }
 
+func (req *HttpRequest) Post(sUrl string) (resp *http.Response, body []byte, err error) {
+	return req.Do("POST", sUrl)
+}
+
+func (req *HttpRequest) Get(sUrl string) (resp *http.Response, body []byte, err error) {
+	return req.Do("GET", sUrl)
+}
+
 func (req *HttpRequest) build(method string, sUrl string) (request *http.Request, err error) {
 	if len(req.binData) != 0 {
-		request, err = http.NewRequest(method, sUrl, bytes.NewReader(req.binData))
+		request, err = http.NewRequest(method, sUrl, bytes.NewBuffer(req.binData))
 	} else if len(req.urlValue) != 0 {
 		pr := ioutil.NopCloser(strings.NewReader(req.urlValue.Encode()))
 		request, err = http.NewRequest(method, sUrl, pr)
