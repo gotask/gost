@@ -1,5 +1,5 @@
 // dbreader.go
-package main
+package stmysqlgen
 
 import (
 	"fmt"

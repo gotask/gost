@@ -1,5 +1,5 @@
 // tablereader.go
-package main
+package stmysqlgen
 
 import (
 	"fmt"

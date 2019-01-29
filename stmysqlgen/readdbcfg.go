@@ -1,5 +1,5 @@
 // readdbcfg.go
-package main
+package stmysqlgen
 
 import (
 	"database/sql"
