@@ -21,6 +21,11 @@ func genDBStruct() string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "type DB_%s struct{\n", table.DB)
 	builder.WriteString("\tDB *sql.DB\n")
+	builder.WriteString("\tCharset string\n")
+	builder.WriteString("\tConnectTimeout uint32\n")
+	builder.WriteString("\tReadTimeout uint32\n")
+	builder.WriteString("\tWriteTimeout uint32\n")
+
 	for _, t := range Tables {
 		builder.WriteString("\tT_")
 		builder.WriteString(t.Name)
@@ -29,6 +34,21 @@ func genDBStruct() string {
 		builder.WriteString("\n")
 	}
 	builder.WriteString("}\n")
+	return builder.String()
+}
+
+func genDBConfig() string {
+	if len(Tables) == 0 {
+		return ""
+	}
+	table := Tables[0]
+
+	dbname := "DB_" + table.DB
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "func (db *%s) SetCharset(c string) {\n\t db.Charset = c\n}\n", dbname)
+	fmt.Fprintf(&builder, "func (db *%s) SetConnectTimeout(t uint32) {\n\t db.ConnectTimeout = t\n}\n", dbname)
+	fmt.Fprintf(&builder, "func (db *%s) SetReadTimeout(t uint32) {\n\t db.ReadTimeout = t\n}\n", dbname)
+	fmt.Fprintf(&builder, "func (db *%s) SetWriteTimeout(t uint32) {\n\t db.WriteTimeout = t\n}\n", dbname)
 	return builder.String()
 }
 
@@ -41,8 +61,21 @@ func genDBConnect() string {
 	dbname := "DB_" + table.DB
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "func (db *%s) Open(user, pwd, ip string, port int) error {\n", dbname)
-	code := `	var conurl strings.Builder
-	fmt.Fprintf(&conurl, "%s:%s@tcp(%s:%d)/%s", user, pwd, ip, port, "` + table.DB + `")
+	code := `	if db.ConnectTimeout == 0 {
+		db.ConnectTimeout = 5
+	}
+	var conurl strings.Builder
+	fmt.Fprintf(&conurl, "%s:%s@tcp(%s:%d)/%s?timeout=%ds", user, pwd, ip, port, "` + table.DB + `", db.ConnectTimeout)
+	if db.Charset != "" {
+		fmt.Fprintf(&conurl, "&charset=%s", db.Charset)
+	}
+	if db.ReadTimeout != 0 {
+		fmt.Fprintf(&conurl, "&readTimeout=%ds", db.ReadTimeout)
+	}
+	if db.WriteTimeout != 0 {
+		fmt.Fprintf(&conurl, "&writeTimeout=%ds", db.WriteTimeout)
+	}
+	
 	var err error
 	db.DB, err = sql.Open("mysql", conurl.String())
 	if err != nil {

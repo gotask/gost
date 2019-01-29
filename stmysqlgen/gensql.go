@@ -26,6 +26,7 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 
 	f.WriteString(genDBImport(packagename))
 	f.WriteString(genDBStruct())
+	f.WriteString(genDBConfig())
 	f.WriteString(genDBConnect())
 
 	for _, v := range Tables {

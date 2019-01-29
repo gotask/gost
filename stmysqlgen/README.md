@@ -7,6 +7,10 @@ func main() {
 	fmt.Println(GenGOFile("user", "pwd", "127.0.0.1", 3306, "db_test", "main"))
 
 	db := &DB_db_test{}
+	db.SetCharset("utf8")
+	db.SetConnectTimeout(10)
+	db.SetReadTimeout(30)
+	db.SetWriteTimeout(30)
 	db.Open("moba", "moba2016", "192.168.40.220", 3306)
 	defer db.Close()
 	fmt.Println(db.T_t_role.Count())
