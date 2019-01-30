@@ -62,7 +62,7 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
 	if err == io.EOF { //read partly
 		return 0, 0, nil, nil
-	} else {
+	} else if err != nil {
 		return len(data), 0, nil, err
 	}
 	return len(data), 0, req, nil
