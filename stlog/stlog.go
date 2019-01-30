@@ -191,6 +191,12 @@ func (log *Logger) Close() {
 	}
 }
 
+func (log *Logger) SetLevel(lvl Level) {
+	log.term = lvl
+	log.file = lvl
+	log.sock = lvl
+}
+
 func (log *Logger) SetTermLevel(lvl Level) {
 	log.term = lvl
 }
