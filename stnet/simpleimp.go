@@ -3,6 +3,7 @@ package stnet
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -55,6 +56,18 @@ type ServiceHttp struct {
 	ServiceBase
 }
 
+func (service *ServiceHttp) RspOk(sess *Session) {
+	sRspPayload := "HTTP/1.1 200 OK\r\nContent-Length:0\r\n\r\n"
+	sess.Send([]byte(sRspPayload))
+}
+func (service *ServiceHttp) Rsp404(sess *Session) {
+	sRspPayload := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
+	sess.Send([]byte(sRspPayload))
+}
+func (service *ServiceHttp) RspString(sess *Session, rsp string) {
+	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
+	sess.Send([]byte(sRspPayload))
+}
 func (service *ServiceHttp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
 	//req:=msg.(*http.Request)
 }
