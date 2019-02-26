@@ -1,6 +1,7 @@
 package stutil
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -74,4 +75,11 @@ func IntToString(i int64) string {
 }
 func UintToString(i uint64) string {
 	return strconv.FormatUint(i, 10)
+}
+func StringRegReplace(reg, s, new string) (string, error) {
+	re, er := regexp.Compile(reg)
+	if er != nil {
+		return s, er
+	}
+	return re.ReplaceAllString(s, new), nil
 }
