@@ -4,6 +4,10 @@ import (
 	"time"
 )
 
+func TimeNow() time.Time {
+	return time.Now()
+}
+
 func Unix2Time(sec int64, nsec int64) time.Time {
 	return time.Unix(sec, nsec)
 }
