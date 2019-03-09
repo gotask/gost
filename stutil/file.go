@@ -283,13 +283,13 @@ func FileDir(path string) (s string) {
 	return s
 }
 func FileBase(path string) string {
-	if path != "" {
+	if path == "" {
 		path = os.Args[0]
 	}
 	return filepath.Base(path)
 }
 func FileOnlyName(path string) string {
-	if path != "" {
+	if path == "" {
 		path = os.Args[0]
 	}
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
