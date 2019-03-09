@@ -264,3 +264,33 @@ func (f *STFile) Close() {
 	f.file.Close()
 	f.file = nil
 }
+
+//filepath
+func FileFullPath(path string) (s string) {
+	if path != "" {
+		s, _ = filepath.Abs(path)
+	} else {
+		s, _ = filepath.Abs(os.Args[0])
+	}
+	return s
+}
+func FileDir(path string) (s string) {
+	if path != "" {
+		s, _ = filepath.Abs(filepath.Dir(path))
+	} else {
+		s, _ = filepath.Abs(filepath.Dir(os.Args[0]))
+	}
+	return s
+}
+func FileBase(path string) string {
+	if path != "" {
+		path = os.Args[0]
+	}
+	return filepath.Base(path)
+}
+func FileOnlyName(path string) string {
+	if path != "" {
+		path = os.Args[0]
+	}
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
