@@ -3,7 +3,6 @@ package stnet
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -18,7 +17,7 @@ type Server struct {
 	//threadid->Services
 	services  map[int][]*Service
 	wg        sync.WaitGroup
-	isclose   uint32
+	isClose   bool
 	netSignal []chan int
 }
 
@@ -79,7 +78,7 @@ func (svr *Server) Start() error {
 	for k, v := range svr.services {
 		go func(threadIdx int, ms []*Service, all []*Service) {
 			svr.wg.Add(1)
-			for svr.isclose == 0 {
+			for !svr.isClose {
 				nowA := time.Now()
 				for _, s := range ms {
 					s.loop() //service loop
@@ -113,7 +112,7 @@ func (svr *Server) Start() error {
 		}
 		go func(idx int, ss []*Service) {
 			svr.wg.Add(1)
-			for svr.isclose == 0 {
+			for !svr.isClose {
 				nmsg := 0
 				for _, s := range ss {
 					nmsg += s.messageThread(idx)
@@ -142,7 +141,7 @@ func (svr *Server) Stop() {
 	time.Sleep(time.Second) //wait a second for processing destroy messages
 
 	//stop logic work
-	atomic.CompareAndSwapUint32(&svr.isclose, 0, 1)
+	svr.isClose = true
 	//wakeup logic thread
 	for i := 0; i < ProcessorThreadsNum; i++ {
 		select {
