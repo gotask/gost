@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-//max 128 threads in server.
+//number of threads in server.
 var (
 	ProcessorThreadsNum = 32
 )
@@ -19,6 +19,8 @@ type Server struct {
 	wg        sync.WaitGroup
 	isClose   bool
 	netSignal []chan int
+
+	nameServices map[string]*Service
 }
 
 func NewServer(name string, loopmsec uint32) *Server {
@@ -29,6 +31,7 @@ func NewServer(name string, loopmsec uint32) *Server {
 	svr.name = name
 	svr.loopmsec = loopmsec
 	svr.services = make(map[int][]*Service)
+	svr.nameServices = make(map[string]*Service)
 
 	svr.netSignal = make([]chan int, ProcessorThreadsNum)
 	for i := 0; i < ProcessorThreadsNum; i++ {
@@ -47,6 +50,7 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 		return nil, e
 	}
 	svr.services[threadId] = append(svr.services[threadId], s)
+	svr.nameServices[name] = s
 	return s, e
 }
 
@@ -62,6 +66,13 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Servi
 //can be called when server is running
 func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) *Connect {
 	return newConnect(service, name, address, reconnectmsec, userdata)
+}
+
+func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {
+	if s, ok := svr.nameServices[servicename]; ok {
+		return s.PushRequest(msgid, msg)
+	}
+	return fmt.Errorf("no service named %s", servicename)
 }
 
 func (svr *Server) Start() error {

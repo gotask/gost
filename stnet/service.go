@@ -112,6 +112,22 @@ func (service *Service) destroy() {
 		}
 	}
 }
+
+func (service *Service) PushRequest(msgid int32, msg interface{}) error {
+	select {
+	case service.messageQ[service.threadId] <- sessionMessage{nil, Data, msgid, msg, nil}:
+	default:
+		return fmt.Errorf("service recv queue is full and the message is droped;service=%s;msgid=%d;", service.Name, msgid)
+	}
+
+	//wakeup logic thread
+	select {
+	case (*service.netSignal)[service.threadId] <- 1:
+	default:
+	}
+	return nil
+}
+
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	lenParsed, msgid, msg, e := service.imp.Unmarshal(sess, data)
 	if lenParsed <= 0 || msgid < 0 {
@@ -123,13 +139,11 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	} else if th >= ProcessorThreadsNum {
 		th = th % ProcessorThreadsNum
 	}
-	to := time.NewTimer(time.Second)
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e}:
-	case <-to.C:
+	default:
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
-	to.Stop()
 
 	//wakeup logic thread
 	select {
@@ -138,8 +152,9 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	}
 	return lenParsed
 }
-func (service *Service) SessionEvent(sess *Session, cmd CMDType) {
-	to := time.NewTimer(time.Second)
+
+func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
+	to := time.NewTimer(100 * time.Millisecond)
 	select {
 	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil}:
 	case <-to.C:

@@ -35,7 +35,7 @@ type MsgParse interface {
 	//int:length of recved data parsed;
 	ParseMsg(sess *Session, data []byte) int
 
-	SessionEvent(sess *Session, cmd CMDType)
+	sessionEvent(sess *Session, cmd CMDType)
 }
 
 //this will be called when session open
@@ -223,13 +223,13 @@ func (s *Session) dorecv() {
 	if s.onopen != nil {
 		s.onopen(s)
 	}
-	s.parser.SessionEvent(s, Open)
+	s.parser.sessionEvent(s, Open)
 
 	msgbuf := bp.Alloc(MsgBuffSize)
 	for {
 		n, err := s.socket.Read(msgbuf)
 		if err != nil {
-			s.parser.SessionEvent(s, Close)
+			s.parser.sessionEvent(s, Close)
 			return
 		}
 		s.hander <- msgbuf[0:n]
@@ -262,7 +262,7 @@ func (s *Session) dohand() {
 		case <-s.closer:
 			return
 		case <-ht.C:
-			s.parser.SessionEvent(s, HeartBeat)
+			s.parser.sessionEvent(s, HeartBeat)
 		case buf := <-s.hander:
 			if tempBuf != nil {
 				buf = append(tempBuf, buf...)

@@ -117,16 +117,18 @@ func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 		Message: msg,
 	}
 
+	to := time.NewTimer(100 * time.Millisecond)
 	for {
 		select {
 		case <-log.clos:
 			return
 		case log.recv <- rec:
 			return
-		case <-time.After(300 * time.Millisecond):
+		case <-to.C:
 			break
 		}
 	}
+	to.Stop()
 }
 
 func (log *Logger) print(lvl Level, arg0 interface{}, args ...interface{}) {
@@ -249,7 +251,7 @@ func (log *Logger) SetSockLevel(lvl Level, serverip string) {
 
 func NewLogger() *Logger {
 	log := &Logger{
-		recv: make(chan *LogRecord, 16),
+		recv: make(chan *LogRecord, 1024),
 		clos: make(chan int),
 		wait: make(chan int),
 		term: DEBUG,
