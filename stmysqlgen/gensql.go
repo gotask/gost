@@ -40,6 +40,7 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 		f.WriteString(genTableReplaceBatch(v, "InsertBatch", "insert"))
 		f.WriteString(genTableReplaceOne(v, "ReplaceOne", "replace"))
 		f.WriteString(genTableReplaceBatch(v, "ReplaceBatch", "replace"))
+		f.WriteString(genTableCreate(v))
 		f.WriteString(genTableDelete(v))
 		f.WriteString(genTableUpdate(v))
 	}

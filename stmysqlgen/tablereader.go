@@ -262,6 +262,17 @@ func genTableReplaceBatch(table *MSTable, fun, oper string) string {
 	return builder.String()
 }
 
+func genTableCreate(table *MSTable) string {
+	tname := "T_" + table.DB + "_" + table.Name
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "func (t *%s) Create() (sql.Result, error) {\n", tname)
+	builder.WriteString("\tsqlcmd := `")
+	builder.WriteString(table.CreateCmd)
+	builder.WriteString("`\n")
+	builder.WriteString("\treturn t.DB.Exec(sqlcmd)\n}\n")
+	return builder.String()
+}
+
 func genTableDelete(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder

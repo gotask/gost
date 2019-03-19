@@ -14,9 +14,10 @@ type MSColumn struct {
 	Type string
 }
 type MSTable struct {
-	Name string
-	DB   string
-	Cols []MSColumn
+	Name      string
+	DB        string
+	Cols      []MSColumn
+	CreateCmd string
 }
 
 var (
@@ -42,8 +43,12 @@ func readTable(db *sql.DB, dbname string) error {
 	for res.Next() {
 		var name string
 		res.Scan(&name)
-		table := &MSTable{name, dbname, nil}
+		table := &MSTable{name, dbname, nil, ""}
 		err = readColumn(db, table)
+		if err != nil {
+			return err
+		}
+		err = readCreateCmd(db, table)
 		if err != nil {
 			return err
 		}
@@ -65,6 +70,22 @@ func readColumn(db *sql.DB, table *MSTable) error {
 			return err
 		}
 		table.Cols = append(table.Cols, MSColumn{field, typ})
+	}
+	return nil
+}
+
+func readCreateCmd(db *sql.DB, table *MSTable) error {
+	res, err := db.Query("SHOW CREATE TABLE " + table.Name)
+	if err != nil {
+		return err
+	}
+	for res.Next() {
+		var name, createstr string
+		err = res.Scan(&name, &createstr)
+		if err != nil {
+			return err
+		}
+		table.CreateCmd = strings.Replace(createstr, "`", "", -1)
 	}
 	return nil
 }
