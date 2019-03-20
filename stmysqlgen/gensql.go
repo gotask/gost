@@ -35,6 +35,7 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 		f.WriteString(genTableRecordCount(v))
 		f.WriteString(genTableRecordMax(v))
 		f.WriteString(genTableSelectOne(v))
+		f.WriteString(genTableSelectPriKey(v))
 		f.WriteString(genTableSelectAll(v))
 		f.WriteString(genTableReplaceOne(v, "InsertOne", "insert"))
 		f.WriteString(genTableReplaceBatch(v, "InsertBatch", "insert"))
@@ -42,7 +43,9 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 		f.WriteString(genTableReplaceBatch(v, "ReplaceBatch", "replace"))
 		f.WriteString(genTableCreate(v))
 		f.WriteString(genTableDelete(v))
+		f.WriteString(genTableDeletePriKey(v))
 		f.WriteString(genTableUpdate(v))
+		f.WriteString(genTableUpdatePriKey(v))
 	}
 	return nil
 }

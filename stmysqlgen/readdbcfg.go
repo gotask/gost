@@ -12,12 +12,15 @@ import (
 type MSColumn struct {
 	Name string
 	Type string
+	Key  string
 }
 type MSTable struct {
 	Name      string
 	DB        string
 	Cols      []MSColumn
 	CreateCmd string
+	PriKeyNum int
+	PriKey    MSColumn
 }
 
 var (
@@ -43,7 +46,7 @@ func readTable(db *sql.DB, dbname string) error {
 	for res.Next() {
 		var name string
 		res.Scan(&name)
-		table := &MSTable{name, dbname, nil, ""}
+		table := &MSTable{name, dbname, nil, "", 0, MSColumn{}}
 		err = readColumn(db, table)
 		if err != nil {
 			return err
@@ -69,7 +72,12 @@ func readColumn(db *sql.DB, table *MSTable) error {
 		if err != nil {
 			return err
 		}
-		table.Cols = append(table.Cols, MSColumn{field, typ})
+		col := MSColumn{field, typ, key}
+		if key == "PRI" {
+			table.PriKeyNum++
+			table.PriKey = col
+		}
+		table.Cols = append(table.Cols, col)
 	}
 	return nil
 }

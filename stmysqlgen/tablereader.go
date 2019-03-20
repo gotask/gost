@@ -25,7 +25,9 @@ func genTableDataStruct(table *MSTable) string {
 		builder.WriteString(c.Name)
 		builder.WriteString(" type:")
 		builder.WriteString(c.Type)
-		builder.WriteString(" `\n")
+		builder.WriteString(" key:")
+		builder.WriteString(c.Key)
+		builder.WriteString("`\n")
 	}
 	builder.WriteString("}\n")
 	return builder.String()
@@ -34,6 +36,7 @@ func genTableDataStruct(table *MSTable) string {
 func genTableRecordCount(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select count(*) as num from %s.%s where x=?\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Count(whereArgs ...interface{}) (int, error) {\n", tname)
 	builder.WriteString("\tsqlcmd := \"select count(*) as num from ")
 	builder.WriteString(table.Name)
@@ -67,6 +70,7 @@ func genTableRecordCount(table *MSTable) string {
 func genTableRecordMax(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select column as c from %s.%s where x=? order by c desc limit 1\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Max(column string, whereArgs ...interface{}) (string, error) {\n", tname)
 	builder.WriteString("\tsqlcmd := \"select \" + column + \" as c from ")
 	builder.WriteString(table.Name)
@@ -118,6 +122,7 @@ func genTableSelectOne(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select * from %s.%s where x=? limit 1\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) SelectOne(whereArgs ...interface{}) (*%s, error) {\n", tname, dname)
 	builder.WriteString("\tsqlcmd := \"select * from ")
 	builder.WriteString(table.Name)
@@ -135,6 +140,37 @@ func genTableSelectOne(table *MSTable) string {
 	} else {
 		rows, err = t.DB.Query(sqlcmd)
 	}
+	if err != nil {
+		return nil, err
+	}
+`
+	builder.WriteString(code)
+	builder.WriteString(genSelectOneScan(table))
+	builder.WriteString("\treturn nil, nil\n")
+	builder.WriteString("}\n")
+	return builder.String()
+}
+
+func genTableSelectPriKey(table *MSTable) string {
+	if table.PriKeyNum != 1 {
+		return ""
+	}
+	tname := "T_" + table.DB + "_" + table.Name
+	dname := "D_" + table.DB + "_" + table.Name
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select * from %s.%s where %s=? limit 1\n", table.DB, table.Name, table.PriKey.Name)
+	fmt.Fprintf(&builder, "func (t *%s) SelectPriKey(key %s) (*%s, error) {\n", tname, getGOType(table.PriKey.Type), dname)
+	builder.WriteString("\tsqlcmd := \"select * from ")
+	builder.WriteString(table.Name)
+	builder.WriteString(" where ")
+	builder.WriteString(table.PriKey.Name)
+	builder.WriteString("=?  limit 1\"\n")
+	code := `
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	rows, err = t.DB.Query(sqlcmd, key)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +201,7 @@ func genTableSelectAll(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select * from %s.%s where x=?\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Select(whereArgs ...interface{}) ([]%s, error) {\n", tname, dname)
 	builder.WriteString("\tsqlcmd := \"select * from ")
 	builder.WriteString(table.Name)
@@ -208,6 +245,7 @@ func genTableReplaceOne(table *MSTable, fun, oper string) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//replace into %s.%s (x, y, z)values(?, ?, ?)\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) %s(data *%s) (sql.Result, error) {\n\tsqlcmd := \"%s into %s (", tname, fun, dname, oper, table.Name)
 	for i, c := range table.Cols {
 		builder.WriteString(c.Name)
@@ -246,6 +284,7 @@ func genTableReplaceBatch(table *MSTable, fun, oper string) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//replace into %s.%s (x, y)values(?, ?),(?, ?)\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) %s(data []*%s) (sql.Result, error) {\n\tvar sqlcmd strings.Builder\n\tsqlcmd.WriteString(\"%s into %s (", tname, fun, dname, oper, table.Name)
 	for i, c := range table.Cols {
 		builder.WriteString(c.Name)
@@ -265,6 +304,7 @@ func genTableReplaceBatch(table *MSTable, fun, oper string) string {
 func genTableCreate(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//create table %s.%s\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Create() (sql.Result, error) {\n", tname)
 	builder.WriteString("\tsqlcmd := `")
 	builder.WriteString(table.CreateCmd)
@@ -276,6 +316,7 @@ func genTableCreate(table *MSTable) string {
 func genTableDelete(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//delete from %s.%s where x=?\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Delete(where string, whereArgs ...interface{}) (sql.Result, error) {\n", tname)
 	builder.WriteString("\tsqlcmd := \"delete from ")
 	builder.WriteString(table.Name)
@@ -284,9 +325,27 @@ func genTableDelete(table *MSTable) string {
 	return builder.String()
 }
 
+func genTableDeletePriKey(table *MSTable) string {
+	if table.PriKeyNum != 1 {
+		return ""
+	}
+	tname := "T_" + table.DB + "_" + table.Name
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "//delete from %s.%s where %s=?\n", table.DB, table.Name, table.PriKey.Name)
+	fmt.Fprintf(&builder, "func (t *%s) DeletePriKey(key %s) (sql.Result, error) {\n", tname, getGOType(table.PriKey.Type))
+	builder.WriteString("\tsqlcmd := \"delete from ")
+	builder.WriteString(table.Name)
+	builder.WriteString(" where ")
+	builder.WriteString(table.PriKey.Name)
+	builder.WriteString("=?\"\n")
+	builder.WriteString("\treturn t.DB.Exec(sqlcmd, key)\n}\n")
+	return builder.String()
+}
+
 func genTableUpdate(table *MSTable) string {
 	tname := "T_" + table.DB + "_" + table.Name
 	var builder strings.Builder
+	fmt.Fprintf(&builder, "//update %s.%s set x=?,y=? where w=?\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Update(data map[string]interface{},where string, whereArgs ...interface{}) (sql.Result, error) {\n", tname)
 	builder.WriteString("\tvar sqlcmd strings.Builder\n")
 	builder.WriteString("\tsqlcmd.WriteString(\"update ")
@@ -298,6 +357,26 @@ func genTableUpdate(table *MSTable) string {
 	builder.WriteString("\t}\n")
 	builder.WriteString("\tvalins = append(valins, whereArgs...)\n")
 	builder.WriteString("\tsqlcmd.WriteString(where)\n")
+	builder.WriteString("\treturn t.DB.Exec(sqlcmd.String(), valins...)\n}\n")
+	return builder.String()
+}
+
+func genTableUpdatePriKey(table *MSTable) string {
+	tname := "T_" + table.DB + "_" + table.Name
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "//update %s.%s set x=?,y=? where %s=?\n", table.DB, table.Name, table.PriKey.Name)
+	fmt.Fprintf(&builder, "func (t *%s) UpdatePriKey(data map[string]interface{},key %s) (sql.Result, error) {\n", tname, getGOType(table.PriKey.Type))
+	builder.WriteString("\tvar sqlcmd strings.Builder\n")
+	builder.WriteString("\tsqlcmd.WriteString(\"update ")
+	builder.WriteString(table.Name)
+	builder.WriteString(" set \")\n\tisfirst:=true\n")
+	builder.WriteString("\tvalins := make([]interface{}, 0, len(data)+1)\n")
+	builder.WriteString("\tfor k,v:=range data{\n\t\tif !isfirst{\n\t\t\tsqlcmd.WriteString(\",\")\n\t\t}\n\t\tsqlcmd.WriteString(k)\n\t\tsqlcmd.WriteString(\"=? \")\n\t\tisfirst=false\n")
+	builder.WriteString("\t\tvalins = append(valins, v)\n")
+	builder.WriteString("\t}\n")
+	builder.WriteString("\tvalins = append(valins, key)\n")
+	str := " where " + table.PriKey.Name + "=?"
+	fmt.Fprintf(&builder, "\tsqlcmd.WriteString(\"%s\")\n", str)
 	builder.WriteString("\treturn t.DB.Exec(sqlcmd.String(), valins...)\n}\n")
 	return builder.String()
 }
