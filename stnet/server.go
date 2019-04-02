@@ -64,6 +64,7 @@ func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp Servi
 }
 
 //can be called when server is running
+//this connect session uses service's ServiceImp to handle message.
 func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) *Connect {
 	return newConnect(service, name, address, reconnectmsec, userdata)
 }

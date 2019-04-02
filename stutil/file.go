@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 )
@@ -83,10 +82,7 @@ func FileMakeDir(path string) error {
 
 //create file
 func FileCreate(file string) (*os.File, error) {
-	d, f := path.Split(file)
-	if f == "" {
-		return nil, fmt.Errorf("not a file")
-	}
+	d := FileDir(file)
 	if d != "" {
 		err := os.MkdirAll(d, os.ModePerm)
 		if err != nil {
