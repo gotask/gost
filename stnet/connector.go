@@ -47,7 +47,7 @@ func (conn *Connector) connect() {
 		if err != nil {
 			conn.parser.sessionEvent(conn.Session, Close)
 			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
-			if conn.reconnectMSec <= 0 || conn.closeflag {
+			if conn.reconnectMSec < 0 || conn.closeflag {
 				break
 			}
 			time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
@@ -62,7 +62,7 @@ func (conn *Connector) connect() {
 		conn.mutex.Unlock()
 
 		<-conn.sessCloseSignal
-		if conn.reconnectMSec <= 0 || conn.closeflag {
+		if conn.reconnectMSec < 0 || conn.closeflag {
 			break
 		}
 		time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
