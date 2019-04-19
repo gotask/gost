@@ -73,6 +73,7 @@ func (conn *Connector) connect() {
 
 func (cnt *Connector) ChangeAddr(addr string) {
 	cnt.address = addr
+	cnt.Session.Close() //close socket,wait for reconnecting
 }
 func (cnt *Connector) Addr() string {
 	return cnt.address

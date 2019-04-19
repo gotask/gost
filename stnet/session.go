@@ -132,6 +132,11 @@ func (s *Session) restart(con net.Conn) error {
 	}
 	s.closer = make(chan int)
 	s.socket = con
+	//writer buffer not should be cleanup
+	//s.writer = make(chan []byte, WriterListLen)
+	//receive buffer maybe half part,so should be cleanup
+	s.hander = make(chan []byte, RecvListLen)
+
 	asyncDo(s.dosend, s.wg)
 	asyncDo(s.dohand, s.wg)
 	go s.dorecv()
