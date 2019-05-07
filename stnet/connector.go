@@ -80,18 +80,16 @@ func (conn *Connector) connect() {
 	conn.wg.Done()
 }
 
-func (cnt *Connector) ChangeAddr(addr string) {
-	cnt.address = addr
-	cnt.sess.Close() //close socket,wait for reconnecting
+func (c *Connector) ChangeAddr(addr string) {
+	c.address = addr
+	c.sess.Close() //close socket,wait for reconnecting
+	c.NotifyReconn()
 }
-func (cnt *Connector) Addr() string {
-	return cnt.address
+func (c *Connector) Addr() string {
+	return c.address
 }
-func (cnt *Connector) ReconnectMSec() int {
-	return cnt.reconnectMSec
-}
-func (cnt *Connector) IsConnected() bool {
-	return !cnt.sess.IsClose()
+func (c *Connector) IsConnected() bool {
+	return !c.sess.IsClose()
 }
 
 func (c *Connector) Close() {
