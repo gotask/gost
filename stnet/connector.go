@@ -8,30 +8,32 @@ import (
 )
 
 type Connector struct {
-	*Session
+	sess            *Session
 	address         string
 	reconnectMSec   int //Millisecond
 	isclose         uint32
 	closeflag       bool
 	sessCloseSignal chan int
+	reconnSignal    chan int
 	wg              *sync.WaitGroup
 	mutex           *sync.Mutex
 }
 
-func NewConnector(address string, reconnectmsec int, msgparse MsgParse, userdata interface{}) *Connector {
+func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
 	}
 
 	conn := &Connector{
 		sessCloseSignal: make(chan int, 1),
+		reconnSignal:    make(chan int, 1),
 		address:         address,
-		reconnectMSec:   reconnectmsec,
+		reconnectMSec:   100,
 		wg:              &sync.WaitGroup{},
 		mutex:           &sync.Mutex{},
 	}
 
-	conn.Session, _ = newConnSession(msgparse, nil, func(*Session) {
+	conn.sess, _ = newConnSession(msgparse, nil, func(*Session) {
 		conn.sessCloseSignal <- 1
 	}, userdata)
 
@@ -42,10 +44,12 @@ func NewConnector(address string, reconnectmsec int, msgparse MsgParse, userdata
 
 func (conn *Connector) connect() {
 	conn.wg.Add(1)
+	reconnNum := 0
 	for !conn.closeflag {
+		reconnNum++
 		cn, err := net.Dial("tcp", conn.address)
 		if err != nil {
-			conn.parser.sessionEvent(conn.Session, Close)
+			conn.sess.parser.sessionEvent(conn.sess, Close)
 			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
 			if conn.reconnectMSec < 0 || conn.closeflag {
 				break
@@ -58,14 +62,19 @@ func (conn *Connector) connect() {
 		if conn.closeflag {
 			break
 		}
-		conn.Session.restart(cn)
+		conn.sess.restart(cn)
 		conn.mutex.Unlock()
 
 		<-conn.sessCloseSignal
 		if conn.reconnectMSec < 0 || conn.closeflag {
 			break
 		}
-		time.Sleep(time.Duration(conn.reconnectMSec) * time.Millisecond)
+		if reconnNum <= 3 { //reconnect 3 times
+			time.Sleep(time.Duration((reconnNum-1)*conn.reconnectMSec) * time.Millisecond)
+		} else {
+			<-conn.reconnSignal
+			reconnNum = 0
+		}
 	}
 	atomic.CompareAndSwapUint32(&conn.isclose, 0, 1)
 	conn.wg.Done()
@@ -73,7 +82,7 @@ func (conn *Connector) connect() {
 
 func (cnt *Connector) ChangeAddr(addr string) {
 	cnt.address = addr
-	cnt.Session.Close() //close socket,wait for reconnecting
+	cnt.sess.Close() //close socket,wait for reconnecting
 }
 func (cnt *Connector) Addr() string {
 	return cnt.address
@@ -82,7 +91,7 @@ func (cnt *Connector) ReconnectMSec() int {
 	return cnt.reconnectMSec
 }
 func (cnt *Connector) IsConnected() bool {
-	return !cnt.Session.IsClose()
+	return !cnt.sess.IsClose()
 }
 
 func (c *Connector) Close() {
@@ -91,12 +100,38 @@ func (c *Connector) Close() {
 	}
 	c.mutex.Lock()
 	c.closeflag = true
-	c.Session.Close()
+	c.sess.Close()
 	c.mutex.Unlock()
+	c.NotifyReconn()
 	c.wg.Wait()
 	SysLog.Debug("connection close, remote addr: %s", c.address)
 }
 
 func (c *Connector) IsClose() bool {
 	return atomic.LoadUint32(&c.isclose) > 0
+}
+
+func (c *Connector) GetID() uint64 {
+	return c.sess.GetID()
+}
+
+func (c *Connector) UserData() interface{} {
+	return c.sess.UserData
+}
+
+func (c *Connector) Send(data []byte) error {
+	c.NotifyReconn()
+	return c.sess.Send(data)
+}
+
+func (c *Connector) AsyncSend(data []byte) error {
+	c.NotifyReconn()
+	return c.sess.AsyncSend(data)
+}
+
+func (c *Connector) NotifyReconn() {
+	select {
+	case c.reconnSignal <- 1:
+	default:
+	}
 }

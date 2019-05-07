@@ -55,18 +55,18 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 }
 
 //must be called before server started.
-func (svr *Server) AddConnect(name, address string, reconnectmsec int, imp ServiceImp, threadId int) (*Connect, error) {
+func (svr *Server) AddConnect(name, address string, imp ServiceImp, threadId int) (*Connect, error) {
 	cs, e := svr.AddService(name, "", 0, imp, threadId)
 	if e != nil {
 		return nil, e
 	}
-	return newConnect(cs, name, address, reconnectmsec, nil), nil
+	return newConnect(cs, name, address, nil), nil
 }
 
 //can be called when server is running
 //this connect session uses service's ServiceImp to handle message.
-func (svr *Server) NewConnect(service *Service, name, address string, reconnectmsec int, userdata interface{}) *Connect {
-	return newConnect(service, name, address, reconnectmsec, userdata)
+func (svr *Server) NewConnect(service *Service, name, address string, userdata interface{}) *Connect {
+	return newConnect(service, name, address, userdata)
 }
 
 func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {

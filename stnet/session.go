@@ -179,7 +179,6 @@ func (s *Session) AsyncSend(data []byte) error {
 		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
 		return ErrSendBuffIsFull
 	}
-
 }
 
 func (s *Session) Close() {
