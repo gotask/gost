@@ -49,15 +49,16 @@ func (service *Service) handlePanic() {
 	}
 }
 
-func (service *Service) messageThread(idx int) int {
+func (service *Service) messageThread(current *CurrentContent) int {
 	defer service.handlePanic()
 
 	n := 0
 	for i := 0; i < 1024; i++ {
 		select {
-		case msg := <-service.messageQ[idx]:
+		case msg := <-service.messageQ[current.GoroutineID]:
+			current.Sess = msg.Sess
 			if msg.Err != nil {
-				service.imp.HandleError(msg.Sess, msg.Err)
+				service.imp.HandleError(current, msg.Err)
 			} else if msg.DtType == Open {
 				service.imp.SessionOpen(msg.Sess)
 			} else if msg.DtType == Close {
@@ -65,7 +66,7 @@ func (service *Service) messageThread(idx int) int {
 			} else if msg.DtType == HeartBeat {
 				service.imp.HeartBeatTimeOut(msg.Sess)
 			} else if msg.DtType == Data {
-				service.imp.HandleMessage(msg.Sess, uint32(msg.MsgID), msg.Msg)
+				service.imp.HandleMessage(current, uint32(msg.MsgID), msg.Msg)
 			} else if msg.DtType == System {
 			} else {
 				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)

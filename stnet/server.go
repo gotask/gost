@@ -76,6 +76,12 @@ func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{})
 	return fmt.Errorf("no service named %s", servicename)
 }
 
+type CurrentContent struct {
+	GoroutineID int
+	Sess        *Session
+	UserDefined interface{}
+}
+
 func (svr *Server) Start() error {
 	allServices := make([]*Service, 0)
 	for _, v := range svr.services {
@@ -90,6 +96,8 @@ func (svr *Server) Start() error {
 	for k, v := range svr.services {
 		go func(threadIdx int, ms []*Service, all []*Service) {
 			svr.wg.Add(1)
+
+			current := &CurrentContent{GoroutineID: threadIdx}
 			for !svr.isClose {
 				nowA := time.Now()
 				for _, s := range ms {
@@ -98,7 +106,7 @@ func (svr *Server) Start() error {
 
 				//processing message of messageQ[threadIdx]
 				for _, s := range all {
-					s.messageThread(threadIdx)
+					s.messageThread(current)
 				}
 
 				nowB := time.Now()
@@ -124,10 +132,12 @@ func (svr *Server) Start() error {
 		}
 		go func(idx int, ss []*Service) {
 			svr.wg.Add(1)
+
+			current := &CurrentContent{GoroutineID: idx}
 			for !svr.isClose {
 				nmsg := 0
 				for _, s := range ss {
-					nmsg += s.messageThread(idx)
+					nmsg += s.messageThread(current)
 				}
 				if nmsg == 0 {
 					select { //wait for new message

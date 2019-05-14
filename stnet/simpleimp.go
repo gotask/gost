@@ -21,7 +21,7 @@ func (service *ServiceBase) Loop() {
 func (service *ServiceBase) Destroy() {
 
 }
-func (service *ServiceBase) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
+func (service *ServiceBase) HandleMessage(current *CurrentContent, msgID uint32, msg interface{}) {
 
 }
 func (service *ServiceBase) SessionOpen(sess *Session) {
@@ -33,7 +33,7 @@ func (service *ServiceBase) SessionClose(sess *Session) {
 func (service *ServiceBase) HeartBeatTimeOut(sess *Session) {
 
 }
-func (service *ServiceBase) HandleError(sess *Session, err error) {
+func (service *ServiceBase) HandleError(current *CurrentContent, err error) {
 	SysLog.Error(err.Error())
 }
 
@@ -68,7 +68,7 @@ func (service *ServiceHttp) RspString(sess *Session, rsp string) {
 	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
 	sess.Send([]byte(sRspPayload))
 }
-func (service *ServiceHttp) HandleMessage(sess *Session, msgID uint32, msg interface{}) {
+func (service *ServiceHttp) HandleMessage(current *CurrentContent, msgID uint32, msg interface{}) {
 	//req:=msg.(*http.Request)
 }
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {

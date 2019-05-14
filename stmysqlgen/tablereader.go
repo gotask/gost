@@ -53,6 +53,11 @@ func genTableRecordCount(table *MSTable) string {
 	} else {
 		rows, err = t.DB.Query(sqlcmd)
 	}
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
 	if err != nil {
 		return 0, err
 	}
@@ -88,6 +93,11 @@ func genTableRecordMax(table *MSTable) string {
 	} else {
 		rows, err = t.DB.Query(sqlcmd)
 	}
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
 	if err != nil {
 		return "", err
 	}
@@ -140,6 +150,11 @@ func genTableSelectOne(table *MSTable) string {
 	} else {
 		rows, err = t.DB.Query(sqlcmd)
 	}
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +186,11 @@ func genTableSelectPriKey(table *MSTable) string {
 		err  error
 	)
 	rows, err = t.DB.Query(sqlcmd, key)
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +238,11 @@ func genTableSelectAll(table *MSTable) string {
 	} else {
 		rows, err = t.DB.Query(sqlcmd)
 	}
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
 	if err != nil {
 		return nil, err
 	}

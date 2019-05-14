@@ -117,6 +117,10 @@ func (c *Connector) UserData() interface{} {
 	return c.sess.UserData
 }
 
+func (c *Connector) SetUserData(data interface{}) {
+	c.sess.UserData = data
+}
+
 func (c *Connector) Send(data []byte) error {
 	c.NotifyReconn()
 	return c.sess.Send(data)

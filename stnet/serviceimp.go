@@ -4,8 +4,8 @@ type ServiceImp interface {
 	Init() bool
 	Loop()
 	Destroy()
-	HandleMessage(sess *Session, msgID uint32, msg interface{})
-	HandleError(*Session, error)
+	HandleMessage(current *CurrentContent, msgID uint32, msg interface{})
+	HandleError(*CurrentContent, error)
 	SessionOpen(sess *Session)
 	SessionClose(sess *Session)
 	HeartBeatTimeOut(sess *Session)
