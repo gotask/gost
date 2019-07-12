@@ -13,7 +13,8 @@ func (mp *mmap) Init(fd int, offset int64, length int) error {
 	var fHandle syscall.Handle
 	fHandle = syscall.Handle(uintptr(fd))
 
-	h, errno := syscall.CreateFileMapping(fHandle, nil, syscall.PAGE_READWRITE, 0, 0, nil)
+	end := int64(length) + offset
+	h, errno := syscall.CreateFileMapping(fHandle, nil, syscall.PAGE_READWRITE, uint32(uint64(end)>>32), uint32(uint64(end)&0xffffffff), nil)
 	if h == 0 || errno != nil {
 		//fmt.Println(syscall.GetLastError())
 		return os.NewSyscallError("CreateFileMapping", errno)
