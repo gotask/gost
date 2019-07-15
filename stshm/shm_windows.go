@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/gotask/gost/stmmap"
 	"github.com/gotask/gost/stutil"
 )
 
@@ -16,20 +17,10 @@ func (sh *shm) Init(key, size uint32) error {
 	name := strconv.FormatUint(uint64(key), 16)
 
 	var fHandle syscall.Handle
-	if stutil.FileIsExist(name) {
-		if stutil.FileSize(name) != int64(size) {
-			return fmt.Errorf("FileIsExist But FileSize NE")
-		}
-	} else {
-		c := make([]byte, size, size)
-		e := stutil.FileCreateAndWrite(name, string(c))
-		if e != nil {
-			return e
-		}
-	}
-	f, e := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	f, e := stmmap.CreateFile(name, int64(size))
 	if e != nil {
 		fHandle = 0
+		return e
 	} else {
 		fHandle = syscall.Handle(uintptr(f.Fd()))
 		defer f.Close()
