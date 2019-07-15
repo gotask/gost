@@ -82,3 +82,23 @@ func (mp *mmap) Unlock() error {
 	}
 	return nil
 }
+
+func fallocate(fd int, off int64, len int64) error {
+	offset := off + len
+
+	var fHandle syscall.Handle
+	fHandle = syscall.Handle(uintptr(fd))
+	_, err := syscall.Seek(fHandle, offset, syscall.FILE_BEGIN)
+	if err != nil {
+		return os.NewSyscallError("Seek", err)
+	}
+	err = syscall.SetEndOfFile(fHandle)
+	if err != nil {
+		return os.NewSyscallError("SetEndOfFile", err)
+	}
+	_, err = syscall.SetFilePointer(fHandle, 0, nil, syscall.FILE_BEGIN)
+	if err != nil {
+		return os.NewSyscallError("SetFilePointer", err)
+	}
+	return nil
+}

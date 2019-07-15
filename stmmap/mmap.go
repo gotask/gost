@@ -41,3 +41,16 @@ func (mp *mmap) reset() {
 	mp.size = 0
 	mp.h = 0
 }
+
+func CreateFile(name string, length int64) (*os.File, error) {
+	f, e := os.OpenFile(name, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
+	if e != nil {
+		return f, e
+	}
+	e = fallocate(int(f.Fd()), 0, length)
+	if e != nil {
+		f.Close()
+		return nil, e
+	}
+	return f, e
+}

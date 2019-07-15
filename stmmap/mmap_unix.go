@@ -68,3 +68,12 @@ func (mp *mmap) Advise(advice int) error {
 
 	return nil
 }
+
+func fallocate(fd int, off int64, len int64) error {
+	sysErr := syscall.Fallocate(fd, 0, off, len)
+	if sysErr != nil {
+		return os.NewSyscallError("Fallocate", sysErr)
+	}
+
+	return nil
+}
