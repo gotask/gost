@@ -184,7 +184,15 @@ func FileIterateDir(path, filter string, callback func(file string) bool) error 
 			return nil
 		}
 		if filter != "" {
-			if !strings.HasSuffix(path, filter) {
+			fs := strings.Split(filter, "|")
+			isMatch := false
+			for _, v := range fs {
+				if strings.HasSuffix(path, v) {
+					isMatch = true
+					break
+				}
+			}
+			if !isMatch {
 				return nil
 			}
 		}
