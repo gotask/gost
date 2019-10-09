@@ -111,6 +111,22 @@ func FileCreateAndWrite(path, content string) error {
 	return nil
 }
 
+func FileCreateAndWriteWithBom(path, content string) error {
+	f, err := FileCreate(path)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+		return err
+	}
+	if _, err = f.WriteString(content); err != nil {
+		return err
+	}
+	f.Close()
+
+	return nil
+}
+
 //append string to file
 func FileWriteAndAppend(path, content string) error {
 	if FileIsExist(path) {
@@ -128,7 +144,7 @@ func FileWriteAndAppend(path, content string) error {
 	}
 }
 
-//reand file all content
+//reand file all content with bom
 func FileReadAll(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -142,7 +158,7 @@ func FileReadAll(path string) (string, error) {
 	return string(c), nil
 }
 
-//read line
+//read line whithout bom
 func FileIterateLine(path string, callback func(num int, line string) bool) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -164,6 +180,11 @@ func FileIterateLine(path string, callback func(num int, line string) bool) erro
 				return nil
 			} else {
 				return err
+			}
+		}
+		if n == 1 { //has bom?
+			if line[0] == 239 && line[1] == 187 && line[2] == 191 {
+				line = line[3:]
 			}
 		}
 		if !callback(n, string(line)) {

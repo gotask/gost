@@ -7,7 +7,6 @@ package stlog
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path"
 	"runtime"
@@ -58,22 +57,22 @@ func FormatLogRecord(rec *LogRecord) string {
 	if rec == nil {
 		return "<nil>"
 	}
-	secs := rec.Created.UnixNano() / 1e9
-	millSecs := rec.Created.UnixNano() / 1e6 % secs
-	cache := *formatCache
-	if cache.LastUpdateMillSeconds != millSecs {
-		month, day, year := rec.Created.Month(), rec.Created.Day(), rec.Created.Year()
-		hour, minute, second := rec.Created.Hour(), rec.Created.Minute(), rec.Created.Second()
-		zone, _ := rec.Created.Zone()
-		updated := &formatCacheType{
-			LastUpdateMillSeconds: millSecs,
-			formatTime:            fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d:%03d %s", year, month, day, hour, minute, second, millSecs, zone),
-		}
-		cache = *updated
-		formatCache = updated
+	millSecs := rec.Created.UnixNano() / 1e6
+	if formatCache.LastUpdateMillSeconds != millSecs {
+		formatCache.LastUpdateMillSeconds = millSecs
+		formatCache.formatTime = rec.Created.Format("2006-01-02 15:04:05.000")
 	}
 
-	return cache.formatTime + "|" + rec.Level.String() + "|" + rec.Source + "|" + rec.Message + "\n"
+	var builder strings.Builder
+	builder.WriteString(formatCache.formatTime)
+	builder.WriteString("|")
+	builder.WriteString(rec.Level.String())
+	builder.WriteString("|")
+	builder.WriteString(rec.Source)
+	builder.WriteString("|")
+	builder.WriteString(rec.Message)
+	builder.WriteString("\n")
+	return builder.String()
 }
 
 type LogRecord struct {
@@ -90,9 +89,6 @@ type Logger struct {
 
 	term      Level
 	file      Level
-	sock      Level
-	sockip    string
-	conn      net.Conn
 	fileWrite *FileLogWriter
 }
 
@@ -117,18 +113,12 @@ func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 		Message: msg,
 	}
 
-	to := time.NewTimer(100 * time.Millisecond)
-	for {
-		select {
-		case <-log.clos:
-			return
-		case log.recv <- rec:
-			return
-		case <-to.C:
-			break
-		}
+	select {
+	case <-log.clos:
+	case log.recv <- rec:
+	default:
+		fmt.Fprint(os.Stderr, "log buffer is full")
 	}
-	to.Stop()
 }
 
 func (log *Logger) print(lvl Level, arg0 interface{}, args ...interface{}) {
@@ -188,21 +178,18 @@ func (log *Logger) Close() {
 	if log.fileWrite != nil {
 		log.fileWrite.close()
 	}
-	if log.conn != nil {
-		log.conn.Close()
-	}
 }
 
 func (log *Logger) SetLevel(lvl Level) {
 	log.term = lvl
 	log.file = lvl
-	log.sock = lvl
 }
 
 func (log *Logger) SetTermLevel(lvl Level) {
 	log.term = lvl
 }
 
+//等级 文件名 log文件最大值 是否每天滚动 最大备份文件个数
 //param: maxsize int (the maxsize of single log file), daily int(is rotate daily), maxbackup int(max count of the backup log files)
 func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 	log.file = lvl
@@ -231,32 +218,13 @@ func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 	}
 }
 
-func (log *Logger) SetSockLevel(lvl Level, serverip string) {
-	log.sock = lvl
-	log.sockip = serverip
-	if lvl == CLOSE {
-		if log.conn != nil {
-			log.conn.Close()
-		}
-		return
-	}
-
-	sock, err := net.Dial("tcp", serverip)
-	if err != nil {
-		fmt.Fprint(os.Stderr, "log server connect error(%q): %s\n", serverip, err)
-		return
-	}
-	log.conn = sock
-}
-
 func NewLogger() *Logger {
 	log := &Logger{
-		recv: make(chan *LogRecord, 1024),
+		recv: make(chan *LogRecord, 10240),
 		clos: make(chan int),
 		wait: make(chan int),
 		term: DEBUG,
 		file: CLOSE,
-		sock: CLOSE,
 	}
 
 	go func() {
@@ -280,22 +248,14 @@ func NewLogger() *Logger {
 					fmt.Fprint(os.Stderr, "log file write error: %s", err)
 				}
 			}
-
-			if log.sock <= rec.Level {
-				_, err := log.conn.Write([]byte(msg))
-				if err != nil {
-					fmt.Fprint(os.Stderr, "sock log send error(%q): %s", log.sockip, err)
-
-					log.conn, err = net.Dial("tcp", log.sockip)
-					if err != nil {
-						fmt.Fprint(os.Stderr, "log server connect error(%q): %s", log.sockip, err)
-						continue
-					}
-					log.conn.Write([]byte(msg))
-				}
-			}
 		}
 	}()
 
 	return log
+}
+
+func NewFileLogger(fname string) *Logger {
+	logger := NewLogger()
+	logger.SetFileLevel(DEBUG, fname, 1024*1024*1024, 0, 10)
+	return logger
 }
