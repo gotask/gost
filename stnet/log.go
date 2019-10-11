@@ -10,5 +10,5 @@ var (
 
 func init() {
 	SysLog = stlog.NewLogger()
-	SysLog.SetFileLevel(stlog.DEBUG, "st_system.log", 1024*1024*100, 1, 30) //one file 100M, 30 files max one day
+	SysLog.SetFileLevel(stlog.DEBUG, "net_system.log", 1024*1024*1024, 1, 30) //one file 1G, 30 files max one day
 }

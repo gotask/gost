@@ -117,7 +117,7 @@ func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 	case <-log.clos:
 	case log.recv <- rec:
 	default:
-		fmt.Fprint(os.Stderr, "log buffer is full")
+		fmt.Fprint(os.Stderr, "log buffer is full\n")
 	}
 }
 
@@ -200,7 +200,6 @@ func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 		return
 	}
 
-	var err error
 	var maxsize, daily, maxbackup int
 	if len(param) > 0 {
 		maxsize = param[0]
@@ -211,11 +210,7 @@ func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 	if len(param) > 2 {
 		maxbackup = param[2]
 	}
-	log.fileWrite, err = newFileLogWriter(fname, maxsize, daily, maxbackup)
-	if err != nil {
-		fmt.Fprint(os.Stderr, "log file error: %s\n", err)
-		return
-	}
+	log.fileWrite = newFileLogger(fname, maxsize, daily, maxbackup)
 }
 
 func NewLogger() *Logger {
@@ -245,7 +240,7 @@ func NewLogger() *Logger {
 			if log.file <= rec.Level {
 				err := log.fileWrite.write(msg)
 				if err != nil {
-					fmt.Fprint(os.Stderr, "log file write error: %s", err)
+					fmt.Fprintf(os.Stderr, "log file write error: %s\n", err.Error())
 				}
 			}
 		}
