@@ -182,7 +182,7 @@ func FileIterateLine(path string, callback func(num int, line string) bool) erro
 				return err
 			}
 		}
-		if n == 1 { //has bom?
+		if n == 1 && len(line) > 2 { //has bom?
 			if line[0] == 239 && line[1] == 187 && line[2] == 191 {
 				line = line[3:]
 			}
