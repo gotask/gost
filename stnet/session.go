@@ -89,6 +89,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 		onclose:   onclose,
 		heartbeat: heartbeat,
 	}
+	SysLog.Debug("session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
 
@@ -115,6 +116,10 @@ func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, u
 	return sess, nil
 }
 
+func (s *Session) RemoteAddr() string {
+	return s.socket.RemoteAddr().Network() + ":" + s.socket.RemoteAddr().String()
+}
+
 func (s *Session) handlePanic() {
 	if err := recover(); err != nil {
 		SysLog.Critical("panic error: %v", err)
@@ -136,6 +141,8 @@ func (s *Session) restart(con net.Conn) error {
 	//s.writer = make(chan []byte, WriterListLen)
 	//receive buffer maybe half part,so should be cleanup
 	s.hander = make(chan []byte, RecvListLen)
+
+	SysLog.Debug("session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 
 	asyncDo(s.dosend, s.wg)
 	asyncDo(s.dohand, s.wg)
