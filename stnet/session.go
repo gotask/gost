@@ -263,6 +263,8 @@ func (s *Session) dohand() {
 	ht := time.NewTimer(wt)
 	if s.heartbeat == 0 {
 		ht.Stop()
+	} else {
+		defer ht.Stop()
 	}
 	var tempBuf []byte
 	for {
@@ -291,7 +293,6 @@ func (s *Session) dohand() {
 			}
 		}
 	}
-	ht.Stop()
 }
 
 func asyncDo(fn func(), wg *sync.WaitGroup) {
