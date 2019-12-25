@@ -98,10 +98,16 @@ func (svr *Server) Start() error {
 			svr.wg.Add(1)
 
 			current := &CurrentContent{GoroutineID: threadIdx}
+			lastLoopTime := time.Now()
+			needD := time.Duration(svr.loopmsec) * time.Millisecond
 			for !svr.isClose {
-				nowA := time.Now()
-				for _, s := range ms {
-					s.loop() //service loop
+				now := time.Now()
+
+				if now.Sub(lastLoopTime) >= needD {
+					lastLoopTime = now
+					for _, s := range ms {
+						s.loop() //service loop
+					}
 				}
 
 				//processing message of messageQ[threadIdx]
@@ -109,9 +115,7 @@ func (svr *Server) Start() error {
 					s.messageThread(current)
 				}
 
-				nowB := time.Now()
-				subD := nowB.Sub(nowA)
-				needD := time.Duration(svr.loopmsec) * time.Millisecond
+				subD := now.Sub(lastLoopTime)
 				if subD < needD {
 					to := time.NewTimer(needD - subD)
 					select { //wait for new message

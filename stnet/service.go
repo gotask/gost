@@ -8,15 +8,15 @@ import (
 )
 
 type Service struct {
-	Name      string
-	listen    *Listener
-	imp       ServiceImp
-	messageQ  []chan sessionMessage
-	isClose   bool
-	connects  map[uint64]*Connect
-	mutex     sync.Mutex
-	netSignal *[]chan int
-	threadId  int
+	*Listener
+	Name         string
+	imp          ServiceImp
+	messageQ     []chan sessionMessage
+	isClose      bool
+	connects     map[uint64]*Connect
+	connectMutex sync.Mutex
+	netSignal    *[]chan int
+	threadId     int
 }
 
 func newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
@@ -27,14 +27,14 @@ func newService(name, address string, heartbeat uint32, imp ServiceImp, netSigna
 	for i := 0; i < ProcessorThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 1024)
 	}
-	svr := &Service{name, nil, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
+	svr := &Service{nil, name, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
 
 	if address != "" {
 		lis, err := NewListener(address, svr, heartbeat)
 		if err != nil {
 			return nil, err
 		}
-		svr.listen = lis
+		svr.Listener = lis
 	}
 
 	return svr, nil
@@ -98,14 +98,14 @@ func (service *Service) loop() {
 }
 func (service *Service) destroy() {
 	service.isClose = true
-	if service.listen != nil {
-		service.listen.Close()
+	if service.Listener != nil {
+		service.Listener.Close()
 	}
-	service.mutex.Lock()
+	service.connectMutex.Lock()
 	for _, v := range service.connects {
 		v.destroy()
 	}
-	service.mutex.Unlock()
+	service.connectMutex.Unlock()
 	for i := 0; i < ProcessorThreadsNum; i++ {
 		select {
 		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil}:
@@ -154,6 +154,17 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	return lenParsed
 }
 
+func (service *Service) IterateConnect(callback func(*Connect) bool) {
+	service.connectMutex.Lock()
+	defer service.connectMutex.Unlock()
+
+	for _, c := range service.connects {
+		if !callback(c) {
+			break
+		}
+	}
+}
+
 func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	to := time.NewTimer(100 * time.Millisecond)
 	select {
@@ -166,9 +177,9 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 
 func newConnect(service *Service, name, address string, userdata interface{}) *Connect {
 	conn := &Connect{NewConnector(address, service, userdata), name, service}
-	service.mutex.Lock()
+	service.connectMutex.Lock()
 	service.connects[conn.GetID()] = conn
-	service.mutex.Unlock()
+	service.connectMutex.Unlock()
 	return conn
 }
 
@@ -184,11 +195,11 @@ func (ct *Connect) Imp() ServiceImp {
 
 func (ct *Connect) Close() {
 	ct.destroy()
-	ct.Master.mutex.Lock()
+	ct.Master.connectMutex.Lock()
 	if _, ok := ct.Master.connects[ct.GetID()]; ok {
 		delete(ct.Master.connects, ct.GetID())
 	}
-	ct.Master.mutex.Unlock()
+	ct.Master.connectMutex.Unlock()
 }
 func (ct *Connect) destroy() {
 	ct.Connector.Close()
