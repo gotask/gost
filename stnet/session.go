@@ -205,7 +205,8 @@ func (s *Session) dosend() {
 		case <-s.closer:
 			return
 		case buf := <-s.writer:
-			if _, err := s.socket.Write(buf); err != nil {
+			s.socket.SetWriteDeadline(time.Now().Add(time.Millisecond * 300))
+			if n, err := s.socket.Write(buf); err != nil || n != len(buf) {
 				s.socket.Close()
 				return
 			}
