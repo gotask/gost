@@ -55,18 +55,9 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 }
 
 //must be called before server started.
-func (svr *Server) AddConnect(name, address string, imp ServiceImp, threadId int) (*Connect, error) {
-	cs, e := svr.AddService(name, "", 0, imp, threadId)
-	if e != nil {
-		return nil, e
-	}
-	return newConnect(cs, name, address, nil), nil
-}
-
-//can be called when server is running
-//this connect session uses service's ServiceImp to handle message.
-func (svr *Server) NewConnect(service *Service, name, address string, userdata interface{}) *Connect {
-	return newConnect(service, name, address, userdata)
+//call service.NewConnect in logic
+func (svr *Server) AddConnector(name string, imp ServiceImp, threadId int) (*Service, error) {
+	return svr.AddService(name, "", 0, imp, threadId)
 }
 
 func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {
@@ -125,7 +116,7 @@ func (svr *Server) Start() error {
 					to.Stop()
 				}
 			}
-			SysLog.Info("%d thread quit.", threadIdx)
+			SysLog.System("%d thread quit.", threadIdx)
 			svr.wg.Done()
 		}(k, v, allServices)
 	}
@@ -149,11 +140,11 @@ func (svr *Server) Start() error {
 					}
 				}
 			}
-			SysLog.Info("%d thread quit.", idx)
+			SysLog.System("%d thread quit.", idx)
 			svr.wg.Done()
 		}(i, allServices)
 	}
-
+	SysLog.Info("server start~~~~~~")
 	return nil
 }
 
@@ -164,7 +155,6 @@ func (svr *Server) Stop() {
 			s.destroy()
 		}
 	}
-	time.Sleep(time.Second) //wait a second for processing destroy messages
 
 	//stop logic work
 	svr.isClose = true
@@ -182,6 +172,6 @@ func (svr *Server) Stop() {
 			s.imp.Destroy()
 		}
 	}
-	SysLog.Info("server closed.")
+	SysLog.Info("server closed~~~~~~")
 	SysLog.Close()
 }

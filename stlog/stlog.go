@@ -26,7 +26,8 @@ func init() {
 type Level int
 
 const (
-	DEBUG Level = iota
+	SYSTEM Level = iota
+	DEBUG
 	INFO
 	WARNING
 	ERROR
@@ -35,7 +36,7 @@ const (
 )
 
 var (
-	levelStrings = [...]string{"DEBG", "INFO", "WARN", "EROR", "CRIT"}
+	levelStrings = [...]string{"SYSM", "DEBG", "INFO", "WARN", "EROR", "CRIT"}
 )
 
 func (l Level) String() string {
@@ -132,6 +133,13 @@ func (log *Logger) print(lvl Level, arg0 interface{}, args ...interface{}) {
 	}
 }
 
+func (log *Logger) System(arg0 interface{}, args ...interface{}) {
+	const (
+		lvl = SYSTEM
+	)
+	log.print(lvl, arg0, args...)
+}
+
 func (log *Logger) Debug(arg0 interface{}, args ...interface{}) {
 	const (
 		lvl = DEBUG
@@ -215,7 +223,7 @@ func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 
 func NewLogger() *Logger {
 	log := &Logger{
-		recv: make(chan *LogRecord, 10240),
+		recv: make(chan *LogRecord, 1024*1024),
 		clos: make(chan int),
 		wait: make(chan int),
 		term: DEBUG,

@@ -102,7 +102,7 @@ func (c *Connector) Close() {
 	c.mutex.Unlock()
 	c.NotifyReconn()
 	c.wg.Wait()
-	SysLog.Debug("connection close, remote addr: %s", c.address)
+	SysLog.System("connection close, remote addr: %s", c.address)
 }
 
 func (c *Connector) IsClose() bool {

@@ -27,6 +27,29 @@ var (
 	Tables []*MSTable
 )
 
+func showDB(user, pwd, ip string, port int) ([]string, error) {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s:%s@tcp(%s:%d)/", user, pwd, ip, port)
+	db, err := sql.Open("mysql", builder.String())
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	res, err := db.Query("show databases")
+	if err != nil {
+		return nil, err
+	}
+
+	var dbs []string
+	for res.Next() {
+		var name string
+		res.Scan(&name)
+		dbs = append(dbs, name)
+	}
+	return dbs, nil
+}
+
 func readDB(user, pwd, ip string, port int, dbname string) error {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "%s:%s@tcp(%s:%d)/%s", user, pwd, ip, port, dbname)

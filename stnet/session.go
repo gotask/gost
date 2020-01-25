@@ -89,7 +89,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 		onclose:   onclose,
 		heartbeat: heartbeat,
 	}
-	SysLog.Debug("session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
+	SysLog.System("session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
 
@@ -142,7 +142,7 @@ func (s *Session) restart(con net.Conn) error {
 	//receive buffer maybe half part,so should be cleanup
 	s.hander = make(chan []byte, RecvListLen)
 
-	SysLog.Debug("session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+	SysLog.System("session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 
 	asyncDo(s.dosend, s.wg)
 	asyncDo(s.dohand, s.wg)
@@ -227,7 +227,7 @@ func (s *Session) dorecv() {
 		s.socket.Close()
 		close(s.closer)
 		s.wg.Wait()
-		SysLog.Debug("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+		SysLog.System("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 		s.onclose(s)
 		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 	}()

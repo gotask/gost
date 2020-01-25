@@ -175,7 +175,7 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func newConnect(service *Service, name, address string, userdata interface{}) *Connect {
+func (service *Service) NewConnect(name, address string, userdata interface{}) *Connect {
 	conn := &Connect{NewConnector(address, service, userdata), name, service}
 	service.connectMutex.Lock()
 	service.connects[conn.GetID()] = conn
@@ -194,7 +194,7 @@ func (ct *Connect) Imp() ServiceImp {
 }
 
 func (ct *Connect) Close() {
-	ct.destroy()
+	go ct.destroy()
 	ct.Master.connectMutex.Lock()
 	if _, ok := ct.Master.connects[ct.GetID()]; ok {
 		delete(ct.Master.connects, ct.GetID())

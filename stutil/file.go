@@ -2,6 +2,8 @@ package stutil
 
 import (
 	"bufio"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -145,17 +147,17 @@ func FileWriteAndAppend(path, content string) error {
 }
 
 //reand file all content with bom
-func FileReadAll(path string) (string, error) {
+func FileReadAll(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer f.Close()
 	c, err := ioutil.ReadAll(f)
 	if err != nil && err != io.EOF {
-		return "", err
+		return nil, err
 	}
-	return string(c), nil
+	return c, nil
 }
 
 //read line whithout bom
@@ -318,4 +320,50 @@ func FileOnlyName(path string) string {
 		path = os.Args[0]
 	}
 	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+}
+
+func FileIsHidden(path string) bool {
+	ps := strings.Split(path, string(filepath.Separator))
+	for _, s := range ps {
+		if strings.HasPrefix(s, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+//get all files and dirs
+func FileReadDir(path string, noHidden bool, fileList map[string]os.FileInfo) {
+	infos, err := ioutil.ReadDir(path)
+	if err != nil {
+		return
+	}
+	for _, info := range infos {
+		f := path + string(filepath.Separator) + info.Name()
+		if _, ok := fileList[f]; ok {
+			continue
+		}
+		if noHidden && FileIsHidden(f) {
+			continue
+		}
+		fileList[f] = info
+		if info.IsDir() {
+			FileReadDir(f, noHidden, fileList)
+		}
+	}
+}
+
+func FileMD5(path string) (string, error) {
+	f, e := os.Open(path)
+	if e != nil {
+		return "", e
+	}
+	defer f.Close()
+
+	md5hash := md5.New()
+	if _, err := io.Copy(md5hash, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(md5hash.Sum(nil)), nil
 }

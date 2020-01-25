@@ -254,6 +254,52 @@ func genTableSelectAll(table *MSTable) string {
 	return builder.String()
 }
 
+func genTableAllPriKey(table *MSTable) string {
+	tname := "T_" + table.DB + "_" + table.Name
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "//select %s from %s.%s where x=?\n", table.PriKey.Name, table.DB, table.Name)
+	fmt.Fprintf(&builder, "func (t *%s) AllPriKey(whereArgs ...interface{}) ([]%s, error) {\n", tname, getGOType(table.PriKey.Type))
+	fmt.Fprintf(&builder, "\tsqlcmd := \"select %s from ", table.PriKey.Name)
+	builder.WriteString(table.Name)
+	builder.WriteString(" \"\n")
+	code := `	if len(whereArgs) > 0 {
+		sqlcmd += whereArgs[0].(string)
+	}
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if len(whereArgs) > 1 {
+		rows, err = t.DB.Query(sqlcmd, whereArgs[1:]...)
+	} else {
+		rows, err = t.DB.Query(sqlcmd)
+	}
+	defer func() {
+        if rows != nil {
+            rows.Close()
+        }
+     }()
+	if err != nil {
+		return nil, err
+	}
+`
+	builder.WriteString(code)
+	fmt.Fprintf(&builder, "\tvar results []%s\n", getGOType(table.PriKey.Type))
+	builder.WriteString("\tfor rows.Next() {\n")
+	fmt.Fprintf(&builder, "\t\tvar result %s", getGOType(table.PriKey.Type))
+	builder.WriteString(`
+		err = rows.Scan(&result)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+`)
+	return builder.String()
+}
+
 func genReplaceValue(table *MSTable) string {
 	var builder strings.Builder
 	builder.WriteString("(")

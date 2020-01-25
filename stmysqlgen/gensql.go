@@ -9,6 +9,24 @@ import (
 )
 
 func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error {
+	Tables = nil
+
+	if dbname == "" {
+		dbs, err := showDB(user, pwd, ip, port)
+		if err != nil {
+			return err
+		}
+
+		for _, v := range dbs {
+			if v != "" && v != "information_schema" {
+				e := GenGOFile(user, pwd, ip, port, v, packagename)
+				if e != nil {
+					return e
+				}
+			}
+		}
+		return nil
+	}
 	err := readDB(user, pwd, ip, port, dbname)
 	if err != nil {
 		return err
@@ -25,6 +43,7 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 	defer f.Close()
 
 	f.WriteString(genDBImport(packagename))
+	f.WriteString(genDBCreate())
 	f.WriteString(genDBStruct())
 	f.WriteString(genDBConfig())
 	f.WriteString(genDBConnect())
@@ -37,6 +56,7 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 		f.WriteString(genTableSelectOne(v))
 		f.WriteString(genTableSelectPriKey(v))
 		f.WriteString(genTableSelectAll(v))
+		f.WriteString(genTableAllPriKey(v))
 		f.WriteString(genTableReplaceOne(v, "InsertOne", "insert"))
 		f.WriteString(genTableReplaceBatch(v, "InsertBatch", "insert"))
 		f.WriteString(genTableReplaceOne(v, "ReplaceOne", "replace"))
