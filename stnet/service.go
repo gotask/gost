@@ -134,11 +134,14 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	th := service.imp.HashProcessor(sess, msgid, msg)
-	if e != nil || th < 0 {
-		th = service.threadId
-	} else if th >= ProcessorThreadsNum {
-		th = th % ProcessorThreadsNum
+	th := service.threadId
+	if e == nil && msg != nil {
+		th = service.imp.HashProcessor(sess, msgid, msg)
+		if th >= 0 {
+			th = th % ProcessorThreadsNum
+		} else {
+			th = service.threadId
+		}
 	}
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e}:
