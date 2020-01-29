@@ -235,21 +235,37 @@ func NewLogger() *Logger {
 			close(log.wait)
 		}()
 
+		var buff strings.Builder
+		tk := time.NewTicker(time.Millisecond * 300)
+		count := 0
 		for {
-			rec, ok := <-log.recv
-			if !ok || rec.Level == CLOSE {
-				return
-			}
-			msg := FormatLogRecord(rec)
-			if log.term <= rec.Level {
-				fmt.Fprint(os.Stdout, msg)
+			count++
+			select {
+			case <-tk.C:
+				count = 1024
+			case rec, ok := <-log.recv:
+				if !ok || rec.Level == CLOSE {
+					log.fileWrite.write(buff.String())
+					tk.Stop()
+					return
+				}
+				msg := FormatLogRecord(rec)
+				if log.term <= rec.Level {
+					fmt.Fprint(os.Stdout, msg)
+				}
+
+				if log.file <= rec.Level {
+					buff.WriteString(msg)
+				}
 			}
 
-			if log.file <= rec.Level {
-				err := log.fileWrite.write(msg)
+			if count >= 1024 {
+				err := log.fileWrite.write(buff.String())
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "log file write error: %s\n", err.Error())
 				}
+				count = 0
+				buff.Reset()
 			}
 		}
 	}()

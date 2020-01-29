@@ -144,7 +144,7 @@ func (svr *Server) Start() error {
 			svr.wg.Done()
 		}(i, allServices)
 	}
-	SysLog.Info("server start~~~~~~")
+	SysLog.Debug("server start~~~~~~")
 	return nil
 }
 
@@ -172,6 +172,6 @@ func (svr *Server) Stop() {
 			s.imp.Destroy()
 		}
 	}
-	SysLog.Info("server closed~~~~~~")
+	SysLog.Debug("server closed~~~~~~")
 	SysLog.Close()
 }
