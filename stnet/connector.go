@@ -28,7 +28,7 @@ func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Conn
 		sessCloseSignal: make(chan int, 1),
 		reconnSignal:    make(chan int, 1),
 		address:         address,
-		reconnectMSec:   100,
+		reconnectMSec:   5000,
 		wg:              &sync.WaitGroup{},
 		mutex:           &sync.Mutex{},
 	}
@@ -70,7 +70,7 @@ func (conn *Connector) connect() {
 			break
 		}
 		if reconnNum <= 3 { //reconnect 3 times
-			time.Sleep(time.Duration((reconnNum-1)*conn.reconnectMSec) * time.Millisecond)
+			time.Sleep(time.Duration(reconnNum*reconnNum*conn.reconnectMSec) * time.Millisecond)
 		} else {
 			<-conn.reconnSignal
 			reconnNum = 0
