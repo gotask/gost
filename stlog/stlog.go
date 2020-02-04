@@ -245,7 +245,10 @@ func NewLogger() *Logger {
 				count = 1024
 			case rec, ok := <-log.recv:
 				if !ok || rec.Level == CLOSE {
-					log.fileWrite.write(buff.String())
+					msg := buff.String()
+					if msg != "" {
+						log.fileWrite.write(buff.String())
+					}
 					tk.Stop()
 					return
 				}
