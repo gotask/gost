@@ -260,12 +260,15 @@ func NewLogger() *Logger {
 			}
 
 			if count >= 1024 {
-				err := log.fileWrite.write(buff.String())
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "log file write error: %s\n", err.Error())
-				}
 				count = 0
-				buff.Reset()
+				msg := buff.String()
+				if msg != "" {
+					err := log.fileWrite.write(msg)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "log file write error: %s\n", err.Error())
+					}
+					buff.Reset()
+				}
 			}
 		}
 	}()

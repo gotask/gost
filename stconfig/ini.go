@@ -113,6 +113,10 @@ func (config *Config) SectionSet(section, key, val, comment string) {
 	}
 }
 
+func (config *Config) DelSection(section string) {
+	delete(config.sections, section)
+}
+
 func (config *Config) String(key string, def string) string {
 	return config.string(config.values, key, def)
 }
