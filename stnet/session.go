@@ -205,10 +205,17 @@ func (s *Session) dosend() {
 		case <-s.closer:
 			return
 		case buf := <-s.writer:
-			s.socket.SetWriteDeadline(time.Now().Add(time.Millisecond * 300))
-			if n, err := s.socket.Write(buf); err != nil || n != len(buf) {
-				s.socket.Close()
-				return
+			//s.socket.SetWriteDeadline(time.Now().Add(time.Millisecond * 300))
+			n := 0
+			for n < len(buf) {
+				n1, err := s.socket.Write(buf[n:])
+				if err != nil {
+					SysLog.Error("session sending error: %s;sessionid=%d", err.Error(), s.id)
+					s.socket.Close()
+					bp.Free(buf)
+					return
+				}
+				n += n1
 			}
 			bp.Free(buf)
 		}
