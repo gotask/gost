@@ -69,6 +69,7 @@ type Session struct {
 	onclose   FuncOnClose
 	isclose   uint32
 	heartbeat uint32
+	conn      *Connector
 
 	UserData interface{}
 }
@@ -97,7 +98,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 	return sess, nil
 }
 
-func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, userdata interface{}) (*Session, error) {
+func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, c *Connector) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
@@ -111,13 +112,17 @@ func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, u
 		onclose:   onclose,
 		isclose:   1,
 		heartbeat: 0,
-		UserData:  userdata,
+		conn:      c,
 	}
 	return sess, nil
 }
 
 func (s *Session) RemoteAddr() string {
 	return s.socket.RemoteAddr().Network() + ":" + s.socket.RemoteAddr().String()
+}
+
+func (s *Session) Connector() *Connector {
+	return s.conn
 }
 
 func (s *Session) handlePanic() {
@@ -232,6 +237,7 @@ func (s *Session) dorecv() {
 		}
 		//close socket
 		s.socket.Close()
+		s.parser.sessionEvent(s, Close)
 		close(s.closer)
 		s.wg.Wait()
 		SysLog.System("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
@@ -248,7 +254,7 @@ func (s *Session) dorecv() {
 	for {
 		n, err := s.socket.Read(msgbuf)
 		if err != nil {
-			s.parser.sessionEvent(s, Close)
+			//defer close
 			return
 		}
 		s.hander <- msgbuf[0:n]

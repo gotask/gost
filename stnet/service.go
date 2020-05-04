@@ -178,8 +178,8 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func (service *Service) NewConnect(name, address string, userdata interface{}) *Connect {
-	conn := &Connect{NewConnector(address, service, userdata), name, service}
+func (service *Service) NewConnect(address string) *Connect {
+	conn := &Connect{NewConnector(address, service), service}
 	service.connectMutex.Lock()
 	service.connects[conn.GetID()] = conn
 	service.connectMutex.Unlock()
@@ -188,7 +188,6 @@ func (service *Service) NewConnect(name, address string, userdata interface{}) *
 
 type Connect struct {
 	*Connector
-	Name   string
 	Master *Service
 }
 

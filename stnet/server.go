@@ -43,6 +43,7 @@ func NewServer(name string, loopmsec uint32) *Server {
 //must be called before server started.
 //address could be null,then you get a service without listen.
 //when heartbeat(second)=0,heartbeat will be close.
+//call service.NewConnect start a connector
 func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
 	threadId = threadId % ProcessorThreadsNum
 	s, e := newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
@@ -54,10 +55,12 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 	return s, e
 }
 
-//must be called before server started.
-//call service.NewConnect in logic
-func (svr *Server) AddConnector(name string, imp ServiceImp, threadId int) (*Service, error) {
-	return svr.AddService(name, "", 0, imp, threadId)
+func (svr *Server) AddLoopService(name string, imp LoopService, threadId int) (*Service, error) {
+	return svr.AddService(name, "", 0, &ServiceLoop{ServiceBase{}, imp}, threadId)
+}
+
+func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
 func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {

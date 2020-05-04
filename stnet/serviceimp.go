@@ -1,5 +1,9 @@
 package stnet
 
+import (
+	"net/http"
+)
+
 type ServiceImp interface {
 	Init() bool
 	Loop()
@@ -18,4 +22,13 @@ type ServiceImp interface {
 	//sess msgID msg are returned by func of Unmarshal
 	//processorID is the thread who process this msg;if processorID < 0, it only use main thread of the service.it should between 0-ProcessorThreadsNum.
 	HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int)
+}
+
+type LoopService interface {
+	Init() bool
+	Loop()
+}
+
+type HttpService interface {
+	Handle(current *CurrentContent, req *http.Request, e error)
 }

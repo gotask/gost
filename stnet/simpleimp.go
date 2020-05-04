@@ -36,6 +36,12 @@ func (service *ServiceBase) HeartBeatTimeOut(sess *Session) {
 func (service *ServiceBase) HandleError(current *CurrentContent, err error) {
 	SysLog.Error(err.Error())
 }
+func (service *ServiceBase) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+	return len(data), -1, nil, nil
+}
+func (service *ServiceBase) HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int) {
+	return -1
+}
 
 //ServiceImpEcho
 type ServiceEcho struct {
@@ -54,6 +60,7 @@ func (service *ServiceEcho) HashProcessor(sess *Session, msgID int32, msg interf
 //ServiceHttp
 type ServiceHttp struct {
 	ServiceBase
+	imp HttpService
 }
 
 func (service *ServiceHttp) RspOk(sess *Session) {
@@ -69,7 +76,11 @@ func (service *ServiceHttp) RspString(sess *Session, rsp string) {
 	sess.Send([]byte(sRspPayload))
 }
 func (service *ServiceHttp) HandleMessage(current *CurrentContent, msgID uint32, msg interface{}) {
-	//req:=msg.(*http.Request)
+	req := msg.(*http.Request)
+	service.imp.Handle(current, req, nil)
+}
+func (service *ServiceHttp) HandleError(current *CurrentContent, err error) {
+	service.imp.Handle(current, nil, err)
 }
 func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data)))
@@ -82,4 +93,17 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 }
 func (service *ServiceHttp) HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int) {
 	return -1
+}
+
+type ServiceLoop struct {
+	ServiceBase
+	imp LoopService
+}
+
+func (service *ServiceLoop) Init() bool {
+	return service.imp.Init()
+}
+
+func (service *ServiceLoop) Loop() {
+	service.imp.Loop()
 }
