@@ -3,6 +3,8 @@ package stnet
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -63,18 +65,6 @@ type ServiceHttp struct {
 	imp HttpService
 }
 
-func (service *ServiceHttp) RspOk(sess *Session) {
-	sRspPayload := "HTTP/1.1 200 OK\r\nContent-Length:0\r\n\r\n"
-	sess.Send([]byte(sRspPayload))
-}
-func (service *ServiceHttp) Rsp404(sess *Session) {
-	sRspPayload := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-	sess.Send([]byte(sRspPayload))
-}
-func (service *ServiceHttp) RspString(sess *Session, rsp string) {
-	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
-	sess.Send([]byte(sRspPayload))
-}
 func (service *ServiceHttp) HandleMessage(current *CurrentContent, msgID uint32, msg interface{}) {
 	req := msg.(*http.Request)
 	service.imp.Handle(current, req, nil)
@@ -92,7 +82,8 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 	return len(data), 0, req, nil
 }
 func (service *ServiceHttp) HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int) {
-	return -1
+	req := msg.(*http.Request)
+	return service.imp.HashProcessor(sess, req)
 }
 
 type ServiceLoop struct {
@@ -106,4 +97,43 @@ func (service *ServiceLoop) Init() bool {
 
 func (service *ServiceLoop) Loop() {
 	service.imp.Loop()
+}
+
+//ServiceJson
+type ServiceJson struct {
+	ServiceBase
+	imp JsonService
+}
+
+func (service *ServiceJson) Loop() {
+	service.imp.Loop()
+}
+func (service *ServiceJson) HandleMessage(current *CurrentContent, msgID uint32, msg interface{}) {
+	service.imp.Handle(current, msg.(*JsonMsg), nil)
+}
+func (service *ServiceJson) HandleError(current *CurrentContent, err error) {
+	service.imp.Handle(current, nil, err)
+}
+func (service *ServiceJson) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error) {
+	if len(data) < 4 {
+		return 0, 0, nil, nil
+	}
+	msgLen := binary.BigEndian.Uint32(data)
+	if msgLen < 4 || msgLen > 1024*1024*100 {
+		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
+	}
+	if len(data) < int(msgLen) {
+		return 0, 0, nil, nil
+	}
+
+	m := &JsonMsg{}
+	e := json.Unmarshal(data[4:msgLen], m)
+	if e != nil {
+		return int(msgLen), 0, nil, e
+	}
+
+	return int(msgLen), 0, m, nil
+}
+func (service *ServiceJson) HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int) {
+	return service.imp.HashProcessor(sess, msg.(*JsonMsg))
 }

@@ -63,6 +63,10 @@ func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp Ht
 	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
+func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp JsonService, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)
+}
+
 func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {
 	if s, ok := svr.nameServices[servicename]; ok {
 		return s.PushRequest(msgid, msg)

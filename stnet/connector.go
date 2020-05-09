@@ -18,7 +18,7 @@ type Connector struct {
 }
 
 //reconnect at 0s 1s 4s 9s 16s...;when call send changeAddr NotifyReconn, reconnect at once
-func NewConnector(address string, msgparse MsgParse) *Connector {
+func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
 	}
@@ -35,6 +35,7 @@ func NewConnector(address string, msgparse MsgParse) *Connector {
 	conn.sess, _ = newConnSession(msgparse, nil, func(*Session) {
 		conn.sessCloseSignal <- 1
 	}, conn)
+	conn.sess.UserData = userdata
 
 	go conn.connect()
 
