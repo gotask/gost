@@ -158,6 +158,14 @@ func (config *Config) FloatSection(sec string, key string, def float64) float64 
 	return config.float(m.values, key, def)
 }
 
+func (config *Config) Section(sec string) map[string]string {
+	m, ok := config.sections[sec]
+	if !ok {
+		return nil
+	}
+	return m.values
+}
+
 type configSection struct {
 	name   string
 	values map[string]string

@@ -95,20 +95,14 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 	}
 
 	resp, err = req.client.Do(request)
-	//	fmt.Println(request.Cookies())
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if resp != nil {
 		body, err = ioutil.ReadAll(resp.Body)
-		//response.Close = true
-		defer resp.Body.Close()
-		if err != nil {
-			return nil, nil, err
-		}
+		resp.Body.Close()
 	}
-
 	return
 }
 

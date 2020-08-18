@@ -196,15 +196,17 @@ func FileIterateLine(path string, callback func(num int, line string) bool) erro
 	return nil
 }
 
-//walk files
-func FileIterateDir(path, filter string, callback func(file string) bool) error {
+//walk files,filter: txt|jpg
+func FileIterateDir(path, filter string, childrendir bool, callback func(file string) bool) error {
 	err := filepath.Walk(path, func(path string, f os.FileInfo, err error) error {
 		if f == nil {
 			return err
 		}
 		if f.IsDir() {
-			//return filepath.SkipDir
-			return nil
+			if childrendir {
+				return nil
+			}
+			return filepath.SkipDir
 		}
 		if filter != "" {
 			fs := strings.Split(filter, "|")

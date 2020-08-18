@@ -108,11 +108,8 @@ func getGOType(typ string) string {
 		return "[]byte"
 	}
 
-	if typ == "datetime" || typ == "date" || typ == "time" {
-		return "string"
-	}
-	if typ == "timestamp" {
-		return "uint32"
+	if typ == "datetime" || typ == "date" || typ == "time" || typ == "timestamp" {
+		return "time.Time"
 	}
 	return "sql.RawBytes"
 }

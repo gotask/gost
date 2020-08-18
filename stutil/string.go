@@ -1,9 +1,11 @@
 package stutil
 
 import (
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 func StringToInt(a string) int64 {
@@ -82,4 +84,14 @@ func StringRegReplace(reg, s, new string) (string, error) {
 		return s, er
 	}
 	return re.ReplaceAllString(s, new), nil
+}
+
+func BytesToStringUnsafe(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+func StringToBytesUnsafe(s string) []byte {
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh := reflect.SliceHeader{sh.Data, sh.Len, sh.Len}
+	return *(*[]byte)(unsafe.Pointer(&bh))
 }

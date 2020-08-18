@@ -237,10 +237,10 @@ func (s *Session) dorecv() {
 		}
 		//close socket
 		s.socket.Close()
-		s.parser.sessionEvent(s, Close)
 		close(s.closer)
 		s.wg.Wait()
 		SysLog.System("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+		s.parser.sessionEvent(s, Close)
 		s.onclose(s)
 		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 	}()
@@ -283,6 +283,12 @@ func (s *Session) dohand() {
 	var tempBuf []byte
 	for {
 		if s.heartbeat > 0 {
+			if !ht.Stop() {
+				select {
+				case <-ht.C:
+				default:
+				}
+			}
 			ht.Reset(wt)
 		}
 		select {

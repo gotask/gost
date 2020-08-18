@@ -12,9 +12,11 @@ import (
 	"sync"
 
 	"bufio"
+	"time"
+
+	"net"
 
 	"golang.org/x/crypto/ssh"
-	"net"
 )
 
 func SSHNew(user, password, ip_port string) (*ssh.Client, error) {
@@ -22,6 +24,7 @@ func SSHNew(user, password, ip_port string) (*ssh.Client, error) {
 	Conf := ssh.ClientConfig{User: user, Auth: PassWd, HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		return nil
 	}}
+	Conf.Timeout = time.Second
 	return ssh.Dial("tcp", ip_port, &Conf)
 }
 
@@ -43,6 +46,7 @@ func SSHFile(user, keyFilePath, ip_port string) (*ssh.Client, error) {
 		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 			return nil
 		},
+		Timeout: time.Second,
 	}
 
 	return ssh.Dial("tcp", ip_port, config)

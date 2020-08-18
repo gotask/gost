@@ -66,7 +66,7 @@ func (service *Service) messageThread(current *CurrentContent) int {
 			} else if msg.DtType == HeartBeat {
 				service.imp.HeartBeatTimeOut(msg.Sess)
 			} else if msg.DtType == Data {
-				service.imp.HandleMessage(current, uint32(msg.MsgID), msg.Msg)
+				service.imp.HandleMessage(current, uint64(msg.MsgID), msg.Msg)
 			} else if msg.DtType == System {
 			} else {
 				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
@@ -82,7 +82,7 @@ func (service *Service) messageThread(current *CurrentContent) int {
 type sessionMessage struct {
 	Sess   *Session
 	DtType CMDType
-	MsgID  int32
+	MsgID  int64
 	Msg    interface{}
 	Err    error
 }
@@ -114,7 +114,7 @@ func (service *Service) destroy() {
 	}
 }
 
-func (service *Service) PushRequest(msgid int32, msg interface{}) error {
+func (service *Service) PushRequest(msgid int64, msg interface{}) error {
 	select {
 	case service.messageQ[service.threadId] <- sessionMessage{nil, Data, msgid, msg, nil}:
 	default:
@@ -136,7 +136,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	}
 	th := service.threadId
 	if e == nil && msg != nil {
-		th = service.imp.HashProcessor(sess, msgid, msg)
+		th = service.imp.HashProcessor(sess, uint64(msgid), msg)
 		if th >= 0 {
 			th = th % ProcessorThreadsNum
 		} else {
@@ -157,6 +157,16 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	return lenParsed
 }
 
+func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
+	to := time.NewTimer(100 * time.Millisecond)
+	select {
+	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil}:
+	case <-to.C:
+		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
+	}
+	to.Stop()
+}
+
 func (service *Service) IterateConnect(callback func(*Connect) bool) {
 	service.connectMutex.Lock()
 	defer service.connectMutex.Unlock()
@@ -168,14 +178,15 @@ func (service *Service) IterateConnect(callback func(*Connect) bool) {
 	}
 }
 
-func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
-	to := time.NewTimer(100 * time.Millisecond)
-	select {
-	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil}:
-	case <-to.C:
-		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
+func (service *Service) GetConnect(id uint64) *Connect {
+	service.connectMutex.Lock()
+	defer service.connectMutex.Unlock()
+
+	v, ok := service.connects[id]
+	if ok {
+		return v
 	}
-	to.Stop()
+	return nil
 }
 
 func (service *Service) NewConnect(address string, userdata interface{}) *Connect {

@@ -9,7 +9,8 @@ import (
 
 func genDBImport(packagename string) string {
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "package %s\nimport (\n\t%s\n\t%s\n\t%s\n\t%s\n)\n", packagename, `"fmt"`, `"strings"`, `"database/sql"`, `_ "github.com/go-sql-driver/mysql"`)
+	fmt.Fprintf(&builder, "package %s\nimport (\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n)\n", packagename, `"fmt"`, `"strings"`, `"time"`, `"database/sql"`, `_ "github.com/go-sql-driver/mysql"`)
+	builder.WriteString("var _ time.Time\n")
 	return builder.String()
 }
 
@@ -90,7 +91,7 @@ func genDBConnect() string {
 		db.ConnectTimeout = 5
 	}
 	var conurl strings.Builder
-	fmt.Fprintf(&conurl, "%s:%s@tcp(%s:%d)/%s?timeout=%ds", user, pwd, ip, port, "` + table.DB + `", db.ConnectTimeout)
+	fmt.Fprintf(&conurl, "%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=%ds", user, pwd, ip, port, "` + table.DB + `", db.ConnectTimeout)
 	if db.Charset != "" {
 		fmt.Fprintf(&conurl, "&charset=%s", db.Charset)
 	}

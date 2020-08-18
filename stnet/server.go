@@ -8,7 +8,7 @@ import (
 
 //number of threads in server.
 var (
-	ProcessorThreadsNum = 32
+	ProcessorThreadsNum = 128
 )
 
 type Server struct {
@@ -24,6 +24,9 @@ type Server struct {
 }
 
 func NewServer(name string, loopmsec uint32) *Server {
+	//init log
+	NewSysLog()
+
 	if loopmsec == 0 {
 		loopmsec = 1
 	}
@@ -51,12 +54,18 @@ func (svr *Server) AddService(name, address string, heartbeat uint32, imp Servic
 		return nil, e
 	}
 	svr.services[threadId] = append(svr.services[threadId], s)
-	svr.nameServices[name] = s
+	if name != "" {
+		svr.nameServices[name] = s
+	}
 	return s, e
 }
 
 func (svr *Server) AddLoopService(name string, imp LoopService, threadId int) (*Service, error) {
 	return svr.AddService(name, "", 0, &ServiceLoop{ServiceBase{}, imp}, threadId)
+}
+
+func (svr *Server) AddEchoService(name, address string, heartbeat uint32, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, &ServiceEcho{}, threadId)
 }
 
 func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, threadId int) (*Service, error) {
@@ -67,7 +76,35 @@ func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp Js
 	return svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)
 }
 
-func (svr *Server) PushRequest(servicename string, msgid int32, msg interface{}) error {
+func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId int, proxyaddr []string, proxyweight []int) error {
+	if len(proxyaddr) > 1 && len(proxyaddr) != len(proxyweight) {
+		return fmt.Errorf("error proxy param")
+	}
+	c, e := svr.AddService("", "", 0, &ServiceProxyC{}, threadId)
+	if e != nil {
+		return e
+	}
+	s := &ServiceProxyS{}
+	s.remote = c
+	addr := make([]string, len(proxyaddr), len(proxyaddr))
+	copy(addr, proxyaddr)
+	s.remoteip = addr
+	if len(addr) > 1 {
+		weight := make([]int, len(proxyweight), len(proxyweight))
+		copy(weight, proxyweight)
+		for i := 1; i < len(weight); i++ {
+			weight[i] += weight[i-1]
+		}
+		s.weight = weight
+	}
+	_, e = svr.AddService("", address, heartbeat, s, threadId)
+	return e
+}
+
+func (svr *Server) PushRequest(servicename string, msgid int64, msg interface{}) error {
+	if servicename == "" {
+		return fmt.Errorf("servicename is null")
+	}
 	if s, ok := svr.nameServices[servicename]; ok {
 		return s.PushRequest(msgid, msg)
 	}

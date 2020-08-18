@@ -11,7 +11,7 @@ type ServiceImp interface {
 	Init() bool
 	Loop()
 	Destroy()
-	HandleMessage(current *CurrentContent, msgID uint32, msg interface{})
+	HandleMessage(current *CurrentContent, msgID uint64, msg interface{})
 	HandleError(*CurrentContent, error)
 	SessionOpen(sess *Session)
 	SessionClose(sess *Session)
@@ -21,10 +21,10 @@ type ServiceImp interface {
 	//lenParsed is the length readed from 'data'.
 	//msgID and msg are messages parsed from data.
 	//when lenParsed <= 0 or msgID < 0,msg and err will be ignored.
-	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int32, msg interface{}, err error)
+	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error)
 	//sess msgID msg are returned by func of Unmarshal
 	//processorID is the thread who process this msg;if processorID < 0, it only use main thread of the service.it should between 0-ProcessorThreadsNum.
-	HashProcessor(sess *Session, msgID int32, msg interface{}) (processorID int)
+	HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int)
 }
 
 type LoopService interface {
@@ -52,7 +52,7 @@ func RspString(sess *Session, rsp string) {
 
 type JsonMsg struct {
 	Seq     int64  `json:"s"`
-	RetCode int64  `json:"r"`
+	Error   int64  `json:"e"`
 	CmdId   int64  `json:"i"`
 	CmdJson string `json:"j"`
 }

@@ -48,3 +48,29 @@ func TimeZeroClock(shift time.Duration) time.Time {
 	t, _ := time.ParseInLocation("2006-01-02 15:04:05", time.Now().Format("2006-01-02 00:00:00"), time.Local)
 	return t.Add(shift)
 }
+
+func TimerReset(t *time.Timer, d time.Duration) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+	t.Reset(d)
+}
+
+type TimeCost struct {
+	last time.Time
+}
+
+func NewTimeCost() *TimeCost {
+	return &TimeCost{time.Now()}
+}
+
+//millisecond
+func (c *TimeCost) Escape() int64 {
+	now := time.Now()
+	es := now.Sub(c.last)
+	c.last = now
+	return es.Milliseconds()
+}
