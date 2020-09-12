@@ -79,7 +79,7 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 		return 0, 0, nil, nil
 	}
 	dataLen := nIndex + 4
-	ls := bytes.Index(data, []byte("Content-Length: "))
+	ls := bytes.Index(data[0:dataLen], []byte("Content-Length: "))
 	if ls >= 0 { //POST
 		nd := data[ls+16:]
 		end := bytes.IndexByte(nd, '\r')
