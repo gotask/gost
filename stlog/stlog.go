@@ -14,15 +14,6 @@ import (
 	"time"
 )
 
-/*var (
-	DefaultLog *Logger
-)
-
-func init() {
-	DefaultLog = NewLogger()
-	DefaultLog.SetFileLevel(DEBUG, "default.log", 1024*1024*100, 1, 10) //one file 100M, 10 files max one day
-}*/
-
 type Level int
 
 const (
@@ -282,5 +273,11 @@ func NewLogger() *Logger {
 func NewFileLogger(fname string) *Logger {
 	logger := NewLogger()
 	logger.SetFileLevel(DEBUG, fname, 1024*1024*1024, 0, 10)
+	return logger
+}
+
+func NewFileLoggerWithoutTerm(fname string) *Logger {
+	logger := NewFileLogger(fname)
+	logger.SetTermLevel(CRITICAL)
 	return logger
 }

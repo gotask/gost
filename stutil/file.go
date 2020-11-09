@@ -146,7 +146,7 @@ func FileWriteAndAppend(path, content string) error {
 	}
 }
 
-//reand file all content with bom
+//FileReadAll read file all content with bom
 func FileReadAll(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -160,7 +160,23 @@ func FileReadAll(path string) ([]byte, error) {
 	return c, nil
 }
 
-//read line whithout bom
+//FileReadLine read special lines content
+func FileReadLine(path string, line int) ([]string, error) {
+	if line <= 0 {
+		line = 1
+	}
+	var content []string
+	e := FileIterateLine(path, func(n int, l string) bool {
+		if n <= line {
+			content = append(content, l)
+			return true
+		}
+		return false
+	})
+	return content, e
+}
+
+//FileIterateLine read line whithout bom,num begin with 1
 func FileIterateLine(path string, callback func(num int, line string) bool) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -196,14 +212,16 @@ func FileIterateLine(path string, callback func(num int, line string) bool) erro
 	return nil
 }
 
-//walk files,filter: txt|jpg
+//FileIterateDir walk files,filter: txt|jpg
 func FileIterateDir(path, filter string, childrendir bool, callback func(file string) bool) error {
+	isSelf := true
 	err := filepath.Walk(path, func(path string, f os.FileInfo, err error) error {
 		if f == nil {
 			return err
 		}
 		if f.IsDir() {
-			if childrendir {
+			if childrendir || isSelf {
+				isSelf = false
 				return nil
 			}
 			return filepath.SkipDir
