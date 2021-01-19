@@ -76,6 +76,10 @@ func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp Js
 	return svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)
 }
 
+func (svr *Server) AddSpbRpcService(name, address string, heartbeat uint32, imp *ServiceSpbRpc, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, imp, threadId)
+}
+
 func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId int, proxyaddr []string, proxyweight []int) error {
 	if len(proxyaddr) > 1 && len(proxyaddr) != len(proxyweight) {
 		return fmt.Errorf("error proxy param")

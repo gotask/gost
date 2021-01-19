@@ -114,8 +114,11 @@ func NewKVBuffer(data []byte, chunkSize int) (*KVBuffer, error) {
 	buff := &KVBuffer{data: data, freeChunk: list.New()}
 	if data[0] == 0xFE && data[1] == 0xDC && data[2] == 0xBA && data[3] == 0x98 { //is inited
 		buff.chunkSize = read_uint32(data[4:])
+		if buff.chunkSize != uint32(chunkSize) {
+			return nil, fmt.Errorf("chunkSize is wrong,old=%d;new=%d", buff.chunkSize, chunkSize)
+		}
 		buff.size = read_uint64(data[8:])
-		if buff.size != uint64(len(data)) {
+		if buff.size > uint64(len(data)) {
 			return nil, fmt.Errorf("buff size is wrong,old=%d;new=%d", buff.size, len(data))
 		}
 
@@ -164,6 +167,30 @@ func NewKVBuffer(data []byte, chunkSize int) (*KVBuffer, error) {
 			}
 			key := node.GetKey()
 			buff.lru.Add(bytesToStringUnsafe(key), node)
+		}
+
+		if buff.size < uint64(len(data)) { //new data
+			buff.size = uint64(len(data))
+			chunkNum := 0
+			for i := HeaderSize; i < int(buff.size); {
+				next := i + int(buff.chunkSize)
+				if next > int(buff.size) {
+					break
+				}
+				chunkNum++
+				if uint32(chunkNum) <= buff.chunkNum {
+					i = next
+					continue
+				}
+				write_uint32(data[i:], 0)
+				idx := uint32(chunkNum)
+				ch := Chunk{data[i:next], idx, 0}
+				buff.freeChunk.PushBack(ch)
+				i = next
+			}
+			buff.chunkNum = uint32(chunkNum)
+			write_uint64(data[8:], buff.size)
+			buff.lru.Resize(int(buff.chunkNum))
 		}
 	} else {
 		if chunkSize < 32 {
