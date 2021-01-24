@@ -16,6 +16,8 @@ var (
 	errNeedPtr      = errors.New("ptr is needed")
 )
 
+//`tag:"0" require:"true"`
+
 type Spb struct {
 	buf   []byte // encode/decode byte stream
 	index int    // write/read point
@@ -105,10 +107,13 @@ func (spb *Spb) packMap(tag uint32, x interface{}, packHead bool, require bool) 
 }
 
 func (spb *Spb) packStruct(tag uint32, x interface{}, packHead bool) error {
-	if reflect.TypeOf(x).Kind() != reflect.Struct {
+	refVal := reflect.ValueOf(x)
+	if reflect.TypeOf(x).Kind() == reflect.Ptr {
+		refVal = refVal.Elem()
+	}
+	if refVal.Kind() != reflect.Struct {
 		return errInvalidType
 	}
-	refVal := reflect.ValueOf(x)
 	spb.packHeader(tag, SpbPackDataType_StructBegin)
 	for i := 0; i < refVal.NumField(); i++ {
 		iTg := i
@@ -134,7 +139,19 @@ func (spb *Spb) packStruct(tag uint32, x interface{}, packHead bool) error {
 	return nil
 }
 
-func (spb *Spb) pack(tag uint32, x interface{}, packHead bool, require bool) error {
+func (spb *Spb) pack(tag uint32, i interface{}, packHead bool, require bool) error {
+	t := reflect.TypeOf(i)
+	v := reflect.ValueOf(i)
+	var x interface{}
+	if t.Kind() == reflect.Ptr {
+		x = v.Elem().Interface()
+	} else {
+		x = v.Interface()
+	}
+	if x == nil {
+		return errors.New("Marshal called with nil")
+	}
+
 	typ := SpbPackDataType_Integer_Positive
 	var val uint64
 
@@ -447,6 +464,10 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 		return err
 	}
 
+	if x.Kind() == reflect.Ptr {
+		x = x.Elem()
+	}
+
 	var valField reflect.Value
 	if x.Type().Kind() == reflect.Struct {
 		isTag := false
@@ -690,17 +711,19 @@ func newValByType(ty reflect.Type) reflect.Value {
 		return reflect.New(reflect.MakeMap(ty).Type()).Elem()
 	} else if ty.Kind() == reflect.Slice {
 		return reflect.New(reflect.MakeSlice(ty, 0, 0).Type()).Elem()
+	} else if ty.Kind() == reflect.Ptr {
+		return reflect.New(ty.Elem())
 	}
 	return reflect.New(ty).Elem()
 }
 
-func Encode(data interface{}) ([]byte, error) {
+func SpbEncode(data interface{}) ([]byte, error) {
 	spb := Spb{}
 	e := spb.pack(0, data, true, true)
 	return spb.buf, e
 }
 
-func Decode(x interface{}, data []byte) error {
+func SpbDecode(data []byte, x interface{}) error {
 	if reflect.TypeOf(x).Kind() != reflect.Ptr {
 		return errNeedPtr
 	}

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
 	"unsafe"
 )
 
@@ -287,6 +288,14 @@ func (o *Buffer) dec_bool(p *Properties, base structPointer) error {
 	}
 
 	return nil
+}
+
+// Decode an int.
+func (o *Buffer) dec_int(p *Properties, base structPointer) error {
+	if strconv.IntSize == 32 {
+		return o.dec_int32(p, base)
+	}
+	return o.dec_int64(p, base)
 }
 
 // Decode an int32.

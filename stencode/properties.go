@@ -139,7 +139,7 @@ func GetProperties(t reflect.Type) *StructProperties {
 func getTag(f reflect.StructField, i int) string {
 	styp := ""
 	switch f.Type.Kind() {
-	case reflect.Bool, reflect.Uint8, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
+	case reflect.Bool, reflect.Int, reflect.Uint8, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
 		styp = "varint"
 	case reflect.Float32:
 		styp = "fixed32"
@@ -149,7 +149,7 @@ func getTag(f reflect.StructField, i int) string {
 		switch t2 := f.Type.Elem(); t2.Kind() {
 		default:
 			return ""
-		case reflect.Bool, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
+		case reflect.Bool, reflect.Int, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
 			styp = "varint"
 		case reflect.Float32:
 			styp = "fixed32"
@@ -300,6 +300,10 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 		p.enc = (*Buffer).enc_bool
 		p.dec = (*Buffer).dec_bool
 		p.size = size_bool
+	case reflect.Int:
+		p.enc = (*Buffer).enc_int
+		p.dec = (*Buffer).dec_int
+		p.size = size_int32
 	case reflect.Int32:
 		p.enc = (*Buffer).enc_int32
 		p.dec = (*Buffer).dec_int32

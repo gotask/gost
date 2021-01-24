@@ -3,8 +3,6 @@ package stnet
 import (
 	"bufio"
 	"bytes"
-	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -118,45 +116,6 @@ func (service *ServiceLoop) Init() bool {
 
 func (service *ServiceLoop) Loop() {
 	service.imp.Loop()
-}
-
-//ServiceJson
-type ServiceJson struct {
-	ServiceBase
-	imp JsonService
-}
-
-func (service *ServiceJson) Loop() {
-	service.imp.Loop()
-}
-func (service *ServiceJson) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
-	service.imp.Handle(current, msg.(*JsonMsg), nil)
-}
-func (service *ServiceJson) HandleError(current *CurrentContent, err error) {
-	service.imp.Handle(current, nil, err)
-}
-func (service *ServiceJson) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	if len(data) < 4 {
-		return 0, 0, nil, nil
-	}
-	msgLen := binary.BigEndian.Uint32(data)
-	if msgLen < 4 || msgLen > 1024*1024*100 {
-		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
-	}
-	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
-	}
-
-	m := &JsonMsg{}
-	e := json.Unmarshal(data[4:msgLen], m)
-	if e != nil {
-		return int(msgLen), 0, nil, e
-	}
-
-	return int(msgLen), 0, m, nil
-}
-func (service *ServiceJson) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
-	return service.imp.HashProcessor(sess, msg.(*JsonMsg))
 }
 
 type ServiceProxyS struct {

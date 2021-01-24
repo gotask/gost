@@ -291,6 +291,41 @@ func size_bool(p *Properties, base structPointer) int {
 	return len(p.tagcode) + 1 // each bool takes exactly one byte
 }
 
+// Encode an int.
+func (o *Buffer) enc_int(p *Properties, base structPointer) error {
+	var v int
+	if p.isPtr {
+		v = **(**int)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		v = *(*int)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
+
+	x := v
+	if x == 0 {
+		return ErrNil
+	}
+	o.buf = append(o.buf, p.tagcode...)
+	p.valEnc(o, uint64(x))
+	return nil
+}
+
+func size_int(p *Properties, base structPointer) (n int) {
+	var v int
+	if p.isPtr {
+		v = **(**int)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		v = *(*int)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
+
+	x := v
+	if x == 0 {
+		return 0
+	}
+	n += len(p.tagcode)
+	n += p.valSize(uint64(x))
+	return
+}
+
 // Encode an int32.
 func (o *Buffer) enc_int32(p *Properties, base structPointer) error {
 	var v int32

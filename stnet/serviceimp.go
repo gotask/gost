@@ -1,8 +1,6 @@
 package stnet
 
 import (
-	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -48,31 +46,4 @@ func Rsp404(sess *Session) {
 func RspString(sess *Session, rsp string) {
 	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
 	sess.Send([]byte(sRspPayload))
-}
-
-type JsonMsg struct {
-	Seq     int64  `json:"s"`
-	Error   int64  `json:"e"`
-	CmdId   int64  `json:"i"`
-	CmdJson string `json:"j"`
-}
-
-type JsonService interface {
-	Loop()
-	Handle(current *CurrentContent, msg *JsonMsg, e error)
-	HashProcessor(sess *Session, msg *JsonMsg) (processorID int)
-}
-
-func JsonSendBuffer(seq, ret, cmdid int64, cmd interface{}) []byte {
-	msg := JsonMsg{seq, ret, cmdid, ""}
-	b, _ := json.Marshal(cmd)
-	if len(b) > 0 {
-		msg.CmdJson = string(b)
-	}
-	data, _ := json.Marshal(&msg)
-	msglen := len(data) + 4
-	buf := make([]byte, msglen, msglen)
-	binary.BigEndian.PutUint32(buf, uint32(msglen))
-	copy(buf[4:], data)
-	return buf
 }

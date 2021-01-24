@@ -72,11 +72,7 @@ func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp Ht
 	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
-func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp JsonService, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)
-}
-
-func (svr *Server) AddSpbRpcService(name, address string, heartbeat uint32, imp *ServiceSpbRpc, threadId int) (*Service, error) {
+func (svr *Server) AddSpbRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
 	return svr.AddService(name, address, heartbeat, imp, threadId)
 }
 

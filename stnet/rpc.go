@@ -13,61 +13,65 @@ var (
 )
 
 const (
-	SpbRpcErrNoRemoteFunc = 1
-	SpbRpcErrCallTimeout  = 2
-	SpbRpcErrFuncParamErr = 3
+	RpcErrNoRemoteFunc = -1
+	RpcErrCallTimeout  = -2
+	RpcErrFuncParamErr = -3
 )
 
-type SpbReqProto struct {
-	ReqCmdId  uint32 `tag:"0" require:"true"`
-	ReqCmdSeq uint32 `tag:"1"`
-	ReqData   []byte `tag:"2"`
-	IsOneWay  bool   `tag:"3"`
-	FuncName  string `tag:"4"`
+type ReqProto struct {
+	ReqCmdId  uint32
+	ReqCmdSeq uint32
+	ReqData   []byte
+	IsOneWay  bool
+	FuncName  string
 }
 
-type SpbRspProto struct {
-	RspCmdId  uint32 `tag:"0" require:"true"`
-	RspCmdSeq uint32 `tag:"1"`
-	PushSeqId uint32 `tag:"2"`
-	RspCode   int32  `tag:"3"`
-	RspData   []byte `tag:"4"`
-	FuncName  string `tag:"5"`
+type RspProto struct {
+	RspCmdId  uint32
+	RspCmdSeq uint32
+	PushSeqId uint32
+	RspCode   int32
+	RspData   []byte
+	FuncName  string
 }
 
-type SpbRpcService interface {
+type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
-	HandleReq(current *CurrentContent, msg *SpbReqProto)
-	HandleRsp(current *CurrentContent, msg *SpbRspProto)
+	HandleReq(current *CurrentContent, msg *ReqProto)
+	HandleRsp(current *CurrentContent, msg *RspProto)
 	HashProcessor(sess *Session) (processorID int)
 }
 
 type RpcFuncException func(rspCode int32)
 
 type rpcRequest struct {
-	req       SpbReqProto
+	req       ReqProto
 	callback  interface{}
 	exception RpcFuncException
 	timeout   int64
 }
 
-type ServiceSpbRpc struct {
+type ServiceRpc struct {
 	ServiceBase
-	imp SpbRpcService
+	imp RpcService
 
 	rpcRequests    map[uint32]*rpcRequest
 	rpcReqSequence uint32
 	rpcMutex       sync.Mutex
+
+	encode int
 }
 
-func NewServiceSpbRpc(imp SpbRpcService) *ServiceSpbRpc {
-	svr := &ServiceSpbRpc{}
+//encode 1gpb 2spb 3json
+func NewServiceRpc(imp RpcService, encode int) *ServiceRpc {
+	svr := &ServiceRpc{}
 	svr.imp = imp
+	svr.encode = encode
 	return svr
 }
 
-func (service *ServiceSpbRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error { //remotefunction functionparams callback exception
+func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error { //remotefunction functionparams callback exception
 	var rpcReq rpcRequest
 	rpcReq.timeout = time.Now().Unix() + TimeOut
 	rpcReq.req.FuncName = funcName
@@ -86,11 +90,6 @@ func (service *ServiceSpbRpc) RpcCall(sess *Session, funcName string, params ...
 		param2Type := reflect.TypeOf(params[len(params)-2])
 		if param2Type.Kind() != reflect.Func {
 			return errors.New("invalid callback function")
-		}
-		for i := 0; i < param2Type.NumIn(); i++ {
-			if param2Type.In(i).Kind() == reflect.Ptr {
-				return errors.New("invalid callback function param, cannot be ptr")
-			}
 		}
 	}
 	rpcReq.callback = params[len(params)-2]
@@ -117,18 +116,18 @@ func (service *ServiceSpbRpc) RpcCall(sess *Session, funcName string, params ...
 	return service.sendRpcReq(sess, rpcReq.req)
 }
 
-func (service *ServiceSpbRpc) Init() bool {
+func (service *ServiceRpc) Init() bool {
 	service.rpcRequests = make(map[uint32]*rpcRequest)
 	return true
 }
 
-func (service *ServiceSpbRpc) Loop() {
+func (service *ServiceRpc) Loop() {
 	now := time.Now().Unix()
 	service.rpcMutex.Lock()
 	for k, v := range service.rpcRequests {
 		if v.timeout < now {
 			if v.exception != nil {
-				v.exception(SpbRpcErrCallTimeout)
+				v.exception(RpcErrCallTimeout)
 			}
 			delete(service.rpcRequests, k)
 		}
@@ -138,14 +137,14 @@ func (service *ServiceSpbRpc) Loop() {
 	service.imp.Loop()
 }
 
-func (service *ServiceSpbRpc) handleRpcReq(current *CurrentContent, req *SpbReqProto) {
-	var rsp SpbRspProto
+func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) {
+	var rsp RspProto
 	rsp.RspCmdSeq = req.ReqCmdSeq
 	rsp.FuncName = req.FuncName
 
 	m, ok := reflect.TypeOf(service.imp).MethodByName(req.FuncName)
 	if !ok {
-		rsp.RspCode = SpbRpcErrNoRemoteFunc
+		rsp.RspCode = RpcErrNoRemoteFunc
 		service.sendRpcRsp(current.Sess, rsp)
 		SysLog.Error("no rpc funciton:%s", req.FuncName)
 		return
@@ -161,7 +160,7 @@ func (service *ServiceSpbRpc) handleRpcReq(current *CurrentContent, req *SpbReqP
 		val := newValByType(t)
 		e := spb.unpack(val, true)
 		if e != nil {
-			rsp.RspCode = SpbRpcErrFuncParamErr
+			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current.Sess, rsp)
 			SysLog.Error("funciton %s param unpack failed: %s", req.FuncName, e.Error())
 			return
@@ -179,7 +178,7 @@ func (service *ServiceSpbRpc) handleRpcReq(current *CurrentContent, req *SpbReqP
 	for i, v := range returns {
 		e := spbSend.pack(uint32(i+1), v.Interface(), true, true)
 		if e != nil {
-			rsp.RspCode = SpbRpcErrFuncParamErr
+			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current.Sess, rsp)
 			SysLog.Error("funciton %s param pack failed: %s", req.FuncName, e.Error())
 			return
@@ -189,7 +188,7 @@ func (service *ServiceSpbRpc) handleRpcReq(current *CurrentContent, req *SpbReqP
 	service.sendRpcRsp(current.Sess, rsp)
 }
 
-func (service *ServiceSpbRpc) handleRpcRsp(rsp *SpbRspProto) {
+func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 	service.rpcMutex.Lock()
 	v, ok := service.rpcRequests[rsp.RspCmdSeq]
 	if !ok {
@@ -216,7 +215,7 @@ func (service *ServiceSpbRpc) handleRpcRsp(rsp *SpbRspProto) {
 				e := spb.unpack(val, true)
 				if e != nil {
 					if v.exception != nil {
-						v.exception(SpbRpcErrFuncParamErr)
+						v.exception(RpcErrFuncParamErr)
 					}
 					SysLog.Error("recv rpc rsp but unpack failed, func:%d,%s", rsp.FuncName, e.Error())
 					return
@@ -229,21 +228,21 @@ func (service *ServiceSpbRpc) handleRpcRsp(rsp *SpbRspProto) {
 	}
 }
 
-func (service *ServiceSpbRpc) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
+func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
 	if msgID == 0 {
-		service.imp.HandleReq(current, msg.(*SpbReqProto))
+		service.imp.HandleReq(current, msg.(*ReqProto))
 	} else if msgID == 1 {
-		service.imp.HandleRsp(current, msg.(*SpbRspProto))
+		service.imp.HandleRsp(current, msg.(*RspProto))
 	} else if msgID == 2 { //rpc req
-		service.handleRpcReq(current, msg.(*SpbReqProto))
+		service.handleRpcReq(current, msg.(*ReqProto))
 	} else if msgID == 3 { //rpc rsp
-		service.handleRpcRsp(msg.(*SpbRspProto))
+		service.handleRpcRsp(msg.(*RspProto))
 	} else {
 		SysLog.Error("invalid msgid %d", msgID)
 	}
 }
 
-func (service *ServiceSpbRpc) HandleError(current *CurrentContent, err error) {
+func (service *ServiceRpc) HandleError(current *CurrentContent, err error) {
 	service.imp.HandleError(current, err)
 }
 
@@ -251,7 +250,7 @@ func spbLen(b []byte) uint32 {
 	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 //| uint32(b[0])<<24
 }
 
-func (service *ServiceSpbRpc) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
+func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
@@ -265,8 +264,8 @@ func (service *ServiceSpbRpc) Unmarshal(sess *Session, data []byte) (lenParsed i
 
 	flag := data[0]
 	if flag&0x1 == 0 { //req
-		req := &SpbReqProto{}
-		e := Decode(req, data[4:msgLen])
+		req := &ReqProto{}
+		e := Unmarshal(data[4:msgLen], req, service.encode)
 		if e != nil {
 			return int(msgLen), 0, nil, e
 		}
@@ -277,8 +276,8 @@ func (service *ServiceSpbRpc) Unmarshal(sess *Session, data []byte) (lenParsed i
 			return int(msgLen), 2, req, nil
 		}
 	} else { //rsp
-		rsp := &SpbRspProto{}
-		e := Decode(rsp, data[4:msgLen])
+		rsp := &RspProto{}
+		e := Unmarshal(data[4:msgLen], rsp, service.encode)
 		if e != nil {
 			return int(msgLen), 0, nil, e
 		}
@@ -291,12 +290,12 @@ func (service *ServiceSpbRpc) Unmarshal(sess *Session, data []byte) (lenParsed i
 	}
 }
 
-func (service *ServiceSpbRpc) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
+func (service *ServiceRpc) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
 	return service.imp.HashProcessor(sess)
 }
 
-func encodeSpbProtocol(msg interface{}) ([]byte, error) {
-	data, e := Encode(msg)
+func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
+	data, e := Marshal(msg, encode)
 	if e != nil {
 		return nil, e
 	}
@@ -314,16 +313,16 @@ func encodeSpbProtocol(msg interface{}) ([]byte, error) {
 	return spbMsg.buf, nil
 }
 
-func (service *ServiceSpbRpc) SendReq(sess *Session, req SpbReqProto) error {
-	buf, e := encodeSpbProtocol(req)
+func (service *ServiceRpc) SendReq(sess *Session, req ReqProto) error {
+	buf, e := encodeProtocol(&req, service.encode)
 	if e != nil {
 		return e
 	}
 	return sess.Send(buf)
 }
 
-func (service *ServiceSpbRpc) SendRsp(sess *Session, rsp SpbRspProto) error {
-	buf, e := encodeSpbProtocol(rsp)
+func (service *ServiceRpc) SendRsp(sess *Session, rsp RspProto) error {
+	buf, e := encodeProtocol(&rsp, service.encode)
 	if e != nil {
 		return e
 	}
@@ -331,8 +330,8 @@ func (service *ServiceSpbRpc) SendRsp(sess *Session, rsp SpbRspProto) error {
 	return sess.Send(buf)
 }
 
-func (service *ServiceSpbRpc) sendRpcReq(sess *Session, req SpbReqProto) error {
-	buf, e := encodeSpbProtocol(req)
+func (service *ServiceRpc) sendRpcReq(sess *Session, req ReqProto) error {
+	buf, e := encodeProtocol(&req, service.encode)
 	if e != nil {
 		return e
 	}
@@ -340,8 +339,8 @@ func (service *ServiceSpbRpc) sendRpcReq(sess *Session, req SpbReqProto) error {
 	return sess.Send(buf)
 }
 
-func (service *ServiceSpbRpc) sendRpcRsp(sess *Session, rsp SpbRspProto) error {
-	buf, e := encodeSpbProtocol(rsp)
+func (service *ServiceRpc) sendRpcRsp(sess *Session, rsp RspProto) error {
+	buf, e := encodeProtocol(&rsp, service.encode)
 	if e != nil {
 		return e
 	}
