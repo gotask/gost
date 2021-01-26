@@ -82,7 +82,7 @@ func (n *Node) GetVal() []byte {
 	return val
 }
 
-type FuncLruDel func(key string, node Node)
+type FuncLruDel func(key string, val string)
 
 //Buffer implements a kv buffer.
 type KVBuffer struct {
@@ -229,7 +229,8 @@ func (buff *KVBuffer) newLRU() {
 	buff.lru, _ = NewLRU(int(buff.chunkNum), func(key interface{}, value interface{}) {
 		//delete key
 		if buff.onLruDel != nil {
-			buff.onLruDel(key.(string), value.(Node))
+			node := value.(Node)
+			buff.onLruDel(key.(string), bytesToStringUnsafe(node.GetVal()))
 		}
 		buff.delNode(value.(Node))
 	})

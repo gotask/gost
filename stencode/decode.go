@@ -290,6 +290,26 @@ func (o *Buffer) dec_bool(p *Properties, base structPointer) error {
 	return nil
 }
 
+// Decode an uint8.
+func (o *Buffer) dec_uint8(p *Properties, base structPointer) error {
+	u, err := p.valDec(o)
+	if err != nil {
+		return err
+	}
+
+	if p.isPtr {
+		if len(o.uint8s) == 0 {
+			o.uint8s = make([]uint8, boolPoolSize)
+		}
+		o.uint8s[0] = uint8(u)
+		*(**uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field))) = &o.uint8s[0]
+		o.uint8s = o.uint8s[1:]
+	} else {
+		*(*uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field))) = uint8(u)
+	}
+	return nil
+}
+
 // Decode an int.
 func (o *Buffer) dec_int(p *Properties, base structPointer) error {
 	if strconv.IntSize == 32 {
@@ -509,7 +529,13 @@ func (o *Buffer) dec_struct_message(p *Properties, base structPointer) (err erro
 		return e
 	}
 
-	bas := structPointer_GetStructPointer(base, p.field)
+	var bas structPointer
+	if p.isPtr {
+		bas = structPointer_GetStructPointer(base, p.field)
+	} else {
+		bas = (structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
+
 	if bas == nil {
 		// allocate new nested message
 		bas = toStructPointer(reflect.New(p.stype))
@@ -524,6 +550,31 @@ func (o *Buffer) dec_struct_message(p *Properties, base structPointer) (err erro
 	err = o.unmarshalType(p.stype, p.sprop, false, bas)
 	o.buf = obuf
 	o.index = oi
+
+	return err
+}
+
+func (o *Buffer) dec_slice_struct_message_s(p *Properties, base structPointer) error {
+	v := reflect.New(p.stype)
+	bas := toStructPointer(v)
+
+	raw, e := o.DecodeRawBytes(false)
+	if e != nil {
+		return e
+	}
+
+	obuf := o.buf
+	oi := o.index
+	o.buf = raw
+	o.index = 0
+
+	err := o.unmarshalType(p.stype, p.sprop, false, bas)
+	o.buf = obuf
+	o.index = oi
+
+	s := structPointer_NewAt(base, p.field, p.mtype).Elem() // slice
+	s1 := reflect.Append(s, v.Elem())
+	s.Set(s1)
 
 	return err
 }

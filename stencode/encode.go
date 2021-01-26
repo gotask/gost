@@ -17,6 +17,7 @@ type Buffer struct {
 
 	// pools of basic types to amortize allocation.
 	bools   []bool
+	uint8s  []uint8
 	uint32s []uint32
 	uint64s []uint64
 
@@ -291,6 +292,41 @@ func size_bool(p *Properties, base structPointer) int {
 	return len(p.tagcode) + 1 // each bool takes exactly one byte
 }
 
+// Encode an uint8.
+func (o *Buffer) enc_uint8(p *Properties, base structPointer) error {
+	var v uint8
+	if p.isPtr {
+		v = **(**uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		v = *(*uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
+
+	x := v
+	if x == 0 {
+		return ErrNil
+	}
+	o.buf = append(o.buf, p.tagcode...)
+	p.valEnc(o, uint64(x))
+	return nil
+}
+
+func size_uint8(p *Properties, base structPointer) (n int) {
+	var v uint8
+	if p.isPtr {
+		v = **(**uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		v = *(*uint8)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
+
+	x := v
+	if x == 0 {
+		return 0
+	}
+	n += len(p.tagcode)
+	n += p.valSize(uint64(x))
+	return
+}
+
 // Encode an int.
 func (o *Buffer) enc_int(p *Properties, base structPointer) error {
 	var v int
@@ -476,7 +512,12 @@ func isNil(v reflect.Value) bool {
 
 // Encode a message struct.
 func (o *Buffer) enc_struct_message(p *Properties, base structPointer) error {
-	structp := *(*structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	var structp structPointer
+	if p.isPtr {
+		structp = *(*structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		structp = (structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
 	if structp == nil {
 		return ErrNil
 	}
@@ -486,7 +527,12 @@ func (o *Buffer) enc_struct_message(p *Properties, base structPointer) error {
 }
 
 func size_struct_message(p *Properties, base structPointer) int {
-	structp := *(*structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	var structp structPointer
+	if p.isPtr {
+		structp = *(*structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	} else {
+		structp = (structPointer)(unsafe.Pointer(uintptr(base) + uintptr(p.field)))
+	}
 	if structp == nil {
 		return 0
 	}
@@ -714,6 +760,46 @@ func size_slice_struct_message(p *Properties, base structPointer) (n int) {
 	n += l * len(p.tagcode)
 	for i := 0; i < l; i++ {
 		structp := s.Index(i)
+		if structp == nil {
+			return // return the size up to this point
+		}
+
+		n0 := size_struct(p.sprop, structp)
+		n1 := sizeVarint(uint64(n0)) // size of encoded length
+		n += n0 + n1
+	}
+	return
+}
+
+// Encode a slice of message structs ([]struct).
+func (o *Buffer) enc_slice_struct_message_s(p *Properties, base structPointer) error {
+	s := structPointer_NewAt(base, p.field, p.mtype).Elem() // slice
+	l := s.Len()
+
+	for i := 0; i < l; i++ {
+		structp := structPointer(s.Index(i).UnsafeAddr())
+		if structp == nil {
+			return errRepeatedHasNil
+		}
+
+		o.buf = append(o.buf, p.tagcode...)
+		err := o.enc_len_struct(p.sprop, structp)
+		if err != nil {
+			if err == ErrNil {
+				return errRepeatedHasNil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func size_slice_struct_message_s(p *Properties, base structPointer) (n int) {
+	s := structPointer_NewAt(base, p.field, p.mtype).Elem() // slice
+	l := s.Len()
+	n += l * len(p.tagcode)
+	for i := 0; i < l; i++ {
+		structp := structPointer(s.Index(i).UnsafeAddr())
 		if structp == nil {
 			return // return the size up to this point
 		}

@@ -95,11 +95,16 @@ func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...int
 	rpcReq.callback = params[len(params)-2]
 
 	params = params[0 : len(params)-2]
+	var err error
 	spb := Spb{}
 	for i, v := range params {
-		err := spb.pack(uint32(i+1), v, true, true)
+		if service.encode == EncodeTyepSpb {
+			err = spb.pack(uint32(i+1), v, true, true)
+		} else {
+			err = rpcMarshal(&spb, uint32(i+1), v)
+		}
 		if err != nil {
-			return fmt.Errorf("wrong params in RpcCall:%s %s", funcName, err.Error())
+			return fmt.Errorf("wrong params in RpcCall:%s(%d) %s", funcName, i, err.Error())
 		}
 	}
 	rpcReq.req.ReqData = spb.buf
@@ -152,20 +157,29 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 
 	spb := Spb{[]byte(req.ReqData), 0}
 
+	var e error
 	funcT := m.Type
 	funcVals := make([]reflect.Value, funcT.NumIn())
 	funcVals[0] = reflect.ValueOf(service.imp)
 	for i := 1; i < funcT.NumIn(); i++ {
 		t := funcT.In(i)
 		val := newValByType(t)
-		e := spb.unpack(val, true)
+		if service.encode == EncodeTyepSpb {
+			e = spb.unpack(val, true)
+		} else {
+			e = rpcUnmarshal(&spb, uint32(i), val.Interface())
+		}
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current.Sess, rsp)
 			SysLog.Error("funciton %s param unpack failed: %s", req.FuncName, e.Error())
 			return
 		}
-		funcVals[i] = val
+		if t.Kind() == reflect.Ptr {
+			funcVals[i] = val
+		} else {
+			funcVals[i] = val.Elem()
+		}
 	}
 	funcV := m.Func
 	returns := funcV.Call(funcVals)
@@ -207,12 +221,17 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 		spb := Spb{rsp.RspData, 0}
 
 		if v.callback != nil {
+			var e error
 			funcT := reflect.TypeOf(v.callback)
 			funcVals := make([]reflect.Value, funcT.NumIn())
 			for i := 0; i < funcT.NumIn(); i++ {
 				t := funcT.In(i)
 				val := newValByType(t)
-				e := spb.unpack(val, true)
+				if service.encode == EncodeTyepSpb {
+					e = spb.unpack(val, true)
+				} else {
+					e = rpcUnmarshal(&spb, uint32(i), val.Interface())
+				}
 				if e != nil {
 					if v.exception != nil {
 						v.exception(RpcErrFuncParamErr)
@@ -220,7 +239,11 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 					SysLog.Error("recv rpc rsp but unpack failed, func:%d,%s", rsp.FuncName, e.Error())
 					return
 				}
-				funcVals[i] = val
+				if t.Kind() == reflect.Ptr {
+					funcVals[i] = val
+				} else {
+					funcVals[i] = val.Elem()
+				}
 			}
 			funcV := reflect.ValueOf(v.callback)
 			funcV.Call(funcVals)
@@ -255,7 +278,7 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 		return 0, 0, nil, nil
 	}
 	msgLen := spbLen(data)
-	if msgLen <= 4 || msgLen >= 1024*1024*16 {
+	if msgLen < 4 || msgLen >= 1024*1024*16 {
 		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
 	}
 	if len(data) < int(msgLen) {

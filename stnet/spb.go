@@ -708,13 +708,13 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 
 func newValByType(ty reflect.Type) reflect.Value {
 	if ty.Kind() == reflect.Map {
-		return reflect.New(reflect.MakeMap(ty).Type()).Elem()
+		return reflect.New(reflect.MakeMap(ty).Type())
 	} else if ty.Kind() == reflect.Slice {
-		return reflect.New(reflect.MakeSlice(ty, 0, 0).Type()).Elem()
+		return reflect.New(reflect.MakeSlice(ty, 0, 0).Type())
 	} else if ty.Kind() == reflect.Ptr {
 		return reflect.New(ty.Elem())
 	}
-	return reflect.New(ty).Elem()
+	return reflect.New(ty)
 }
 
 func SpbEncode(data interface{}) ([]byte, error) {

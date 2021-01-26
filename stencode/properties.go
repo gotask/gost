@@ -136,24 +136,26 @@ func GetProperties(t reflect.Type) *StructProperties {
 	return sprop
 }
 
-func getTag(f reflect.StructField, i int) string {
+func getTag(f reflect.Type, i int) string {
 	styp := ""
-	switch f.Type.Kind() {
+	switch f.Kind() {
 	case reflect.Bool, reflect.Int, reflect.Uint8, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
 		styp = "varint"
 	case reflect.Float32:
 		styp = "fixed32"
-	case reflect.String, reflect.Map:
+	case reflect.Float64:
+		styp = "fixed64"
+	case reflect.String, reflect.Map, reflect.Struct:
 		styp = "bytes"
 	case reflect.Slice:
-		switch t2 := f.Type.Elem(); t2.Kind() {
+		switch t2 := f.Elem(); t2.Kind() {
 		default:
 			return ""
 		case reflect.Bool, reflect.Int, reflect.Int32, reflect.Uint32, reflect.Int64, reflect.Uint64:
 			styp = "varint"
 		case reflect.Float32:
 			styp = "fixed32"
-		case reflect.String, reflect.Uint8:
+		case reflect.String, reflect.Uint8, reflect.Struct:
 			styp = "bytes"
 		case reflect.Ptr:
 			switch t3 := t2.Elem(); t3.Kind() {
@@ -171,7 +173,7 @@ func getTag(f reflect.StructField, i int) string {
 			}
 		}
 	case reflect.Ptr:
-		switch t2 := f.Type.Elem(); t2.Kind() {
+		switch t2 := f.Elem(); t2.Kind() {
 		default:
 			return ""
 		case reflect.Struct:
@@ -200,7 +202,7 @@ func getPropertiesLocked(t reflect.Type) *StructProperties {
 		p := new(Properties)
 		name := f.Name
 		//p.init(f.Type, name, f.Tag.Get("protobuf"), &f, false)
-		p.init(f.Type, name, getTag(f, i+1), &f, false)
+		p.init(f.Type, name, getTag(f.Type, i+1), &f, false)
 
 		prop.Prop[i] = p
 		prop.order[i] = i
@@ -308,6 +310,10 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 		p.enc = (*Buffer).enc_int32
 		p.dec = (*Buffer).dec_int32
 		p.size = size_int32
+	case reflect.Uint8:
+		p.enc = (*Buffer).enc_uint8
+		p.dec = (*Buffer).dec_uint8
+		p.size = size_uint8
 	case reflect.Uint32:
 		p.enc = (*Buffer).enc_uint32
 		p.dec = (*Buffer).dec_int32 // can reuse
@@ -382,6 +388,12 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 			p.enc = (*Buffer).enc_slice_string
 			p.dec = (*Buffer).dec_slice_string
 			p.size = size_slice_string
+		case reflect.Struct:
+			p.mtype = typ
+			p.stype = t2
+			p.enc = (*Buffer).enc_slice_struct_message_s
+			p.dec = (*Buffer).dec_slice_struct_message_s
+			p.size = size_slice_struct_message_s
 		case reflect.Ptr:
 			switch t3 := t2.Elem(); t3.Kind() {
 			default:
@@ -412,7 +424,7 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 
 		p.mtype = typ
 		p.mkeyprop = &Properties{}
-		p.mkeyprop.init(reflect.PtrTo(p.mtype.Key()), "Key", f.Tag.Get("protobuf_key"), nil, lockGetProp)
+		p.mkeyprop.init(reflect.PtrTo(p.mtype.Key()), "Key", getTag(p.mtype.Key(), 0), nil, lockGetProp)
 		p.mvalprop = &Properties{}
 		vtype := p.mtype.Elem()
 		if vtype.Kind() != reflect.Ptr && vtype.Kind() != reflect.Slice {
@@ -420,7 +432,7 @@ func (p *Properties) setEncAndDec(typ reflect.Type, f *reflect.StructField, lock
 			// so we need encoders for the pointer to this type.
 			vtype = reflect.PtrTo(vtype)
 		}
-		p.mvalprop.init(vtype, "Value", f.Tag.Get("protobuf_val"), nil, lockGetProp)
+		p.mvalprop.init(vtype, "Value", getTag(p.mtype.Elem(), 1), nil, lockGetProp)
 	}
 
 	// precalculate tag code
