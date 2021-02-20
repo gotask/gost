@@ -212,7 +212,7 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 	v, ok := service.rpcRequests[rsp.RspCmdSeq]
 	if !ok {
 		service.rpcMutex.Unlock()
-		SysLog.Error("recv rpc rsp but req not found, func:%d", rsp.FuncName)
+		SysLog.Error("recv rpc rsp but req not found, func: %s", rsp.FuncName)
 		return
 	}
 	delete(service.rpcRequests, rsp.RspCmdSeq)
