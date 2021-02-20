@@ -2,6 +2,7 @@ package stnet
 
 import (
 	"fmt"
+	"net"
 	"sync"
 	"time"
 )
@@ -17,7 +18,7 @@ type Server struct {
 	//threadid->Services
 	services  map[int][]*Service
 	wg        sync.WaitGroup
-	isClose   bool
+	isClose   *Closer
 	netSignal []chan int
 
 	nameServices map[string]*Service
@@ -34,6 +35,7 @@ func NewServer(name string, loopmsec uint32) *Server {
 	svr.name = name
 	svr.loopmsec = loopmsec
 	svr.services = make(map[int][]*Service)
+	svr.isClose = NewCloser(false)
 	svr.nameServices = make(map[string]*Service)
 
 	svr.netSignal = make([]chan int, ProcessorThreadsNum)
@@ -115,6 +117,7 @@ type CurrentContent struct {
 	GoroutineID int
 	Sess        *Session
 	UserDefined interface{}
+	Peer        net.Addr
 }
 
 func (svr *Server) Start() error {
@@ -135,7 +138,7 @@ func (svr *Server) Start() error {
 			current := &CurrentContent{GoroutineID: threadIdx}
 			lastLoopTime := time.Now()
 			needD := time.Duration(svr.loopmsec) * time.Millisecond
-			for !svr.isClose {
+			for !svr.isClose.IsClose() {
 				now := time.Now()
 
 				if now.Sub(lastLoopTime) >= needD {
@@ -173,7 +176,7 @@ func (svr *Server) Start() error {
 			svr.wg.Add(1)
 
 			current := &CurrentContent{GoroutineID: idx}
-			for !svr.isClose {
+			for !svr.isClose.IsClose() {
 				nmsg := 0
 				for _, s := range ss {
 					nmsg += s.messageThread(current)
@@ -201,7 +204,7 @@ func (svr *Server) Stop() {
 	}
 
 	//stop logic work
-	svr.isClose = true
+	svr.isClose.Close()
 	//wakeup logic thread
 	for i := 0; i < ProcessorThreadsNum; i++ {
 		select {

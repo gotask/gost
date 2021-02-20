@@ -40,7 +40,7 @@ func (service *ServiceBase) HandleError(current *CurrentContent, err error) {
 func (service *ServiceBase) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	return len(data), -1, nil, nil
 }
-func (service *ServiceBase) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
+func (service *ServiceBase) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return -1
 }
 
@@ -50,12 +50,12 @@ type ServiceEcho struct {
 }
 
 func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	sess.Send(data)
+	sess.Send(data, sess.peer)
 	return len(data), -1, nil, nil
 }
 
-func (service *ServiceEcho) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
-	return int(sess.GetID() % uint64(ProcessorThreadsNum))
+func (service *ServiceEcho) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
 }
 
 //ServiceHttp
@@ -100,9 +100,9 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 	}
 	return dataLen, 0, req, nil
 }
-func (service *ServiceHttp) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
+func (service *ServiceHttp) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	req := msg.(*http.Request)
-	return service.imp.HashProcessor(sess, req)
+	return service.imp.HashProcessor(current, req)
 }
 
 type ServiceLoop struct {
@@ -154,8 +154,8 @@ func (service *ServiceProxyS) Unmarshal(sess *Session, data []byte) (lenParsed i
 	sess.UserData.(*Connect).Send(data)
 	return len(data), -1, nil, nil
 }
-func (service *ServiceProxyS) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
-	return int(sess.GetID() % uint64(ProcessorThreadsNum))
+func (service *ServiceProxyS) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
 }
 
 type ServiceProxyC struct {
@@ -163,9 +163,9 @@ type ServiceProxyC struct {
 }
 
 func (service *ServiceProxyC) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	sess.UserData.(*Session).Send(data)
+	sess.UserData.(*Session).Send(data, sess.peer)
 	return len(data), -1, nil, nil
 }
-func (service *ServiceProxyC) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
-	return int(sess.GetID() % uint64(ProcessorThreadsNum))
+func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
 }

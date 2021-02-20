@@ -236,6 +236,10 @@ func (o *Buffer) unmarshalType(st reflect.Type, prop *StructProperties, is_group
 			return fmt.Errorf("proto: %s: illegal tag %d (wire type %d)", st, tag, wire)
 		}
 		fieldnum := tag - 1
+		if fieldnum < 0 || fieldnum >= len(prop.Prop) {
+			err = o.skip(st, tag, wire)
+			continue
+		}
 		p := prop.Prop[fieldnum]
 
 		if p.dec == nil {
@@ -252,6 +256,43 @@ func (o *Buffer) unmarshalType(st reflect.Type, prop *StructProperties, is_group
 		if is_group {
 			return io.ErrUnexpectedEOF
 		}
+	}
+	return err
+}
+
+// Skip the next item in the buffer. Its wire type is decoded and presented as an argument.
+func (o *Buffer) skip(t reflect.Type, tag, wire int) error {
+
+	var u uint64
+	var err error
+
+	switch wire {
+	case WireVarint:
+		_, err = o.DecodeVarint()
+	case WireFixed64:
+		_, err = o.DecodeFixed64()
+	case WireBytes:
+		_, err = o.DecodeRawBytes(false)
+	case WireFixed32:
+		_, err = o.DecodeFixed32()
+	case WireStartGroup:
+		for {
+			u, err = o.DecodeVarint()
+			if err != nil {
+				break
+			}
+			fwire := int(u & 0x7)
+			if fwire == WireEndGroup {
+				break
+			}
+			ftag := int(u >> 3)
+			err = o.skip(t, ftag, fwire)
+			if err != nil {
+				break
+			}
+		}
+	default:
+		err = fmt.Errorf("proto: can't skip unknown wire type %d for %s", wire, t)
 	}
 	return err
 }

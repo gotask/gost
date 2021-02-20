@@ -22,7 +22,7 @@ type ServiceImp interface {
 	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error)
 	//sess msgID msg are returned by func of Unmarshal
 	//processorID is the thread who process this msg;if processorID < 0, it only use main thread of the service.it should between 0-ProcessorThreadsNum.
-	HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int)
+	HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int)
 }
 
 type LoopService interface {
@@ -32,18 +32,18 @@ type LoopService interface {
 
 type HttpService interface {
 	Handle(current *CurrentContent, req *http.Request, e error)
-	HashProcessor(sess *Session, req *http.Request) (processorID int)
+	HashProcessor(current *CurrentContent, req *http.Request) (processorID int)
 }
 
-func RspOk(sess *Session) {
+func RspOk(current *CurrentContent) {
 	sRspPayload := "HTTP/1.1 200 OK\r\nContent-Length:0\r\n\r\n"
-	sess.Send([]byte(sRspPayload))
+	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }
-func Rsp404(sess *Session) {
+func Rsp404(current *CurrentContent) {
 	sRspPayload := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
-	sess.Send([]byte(sRspPayload))
+	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }
-func RspString(sess *Session, rsp string) {
+func RspString(current *CurrentContent, rsp string) {
 	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
-	sess.Send([]byte(sRspPayload))
+	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }

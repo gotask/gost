@@ -601,6 +601,9 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				if err != nil {
 					return err
 				}
+				if vecType.Kind() != reflect.Ptr {
+					vecVal = vecVal.Elem()
+				}
 				vals = append(vals, vecVal)
 			}
 			vecln := len(vals)
@@ -657,6 +660,9 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				er := spb.unpack(mapVal, true)
 				if er != nil {
 					return er
+				}
+				if valType.Kind() != reflect.Ptr {
+					mapVal = mapVal.Elem()
 				}
 				valsVal = append(valsVal, mapVal)
 			}

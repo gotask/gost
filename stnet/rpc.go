@@ -3,6 +3,7 @@ package stnet
 import (
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ type RpcService interface {
 	HandleError(current *CurrentContent, err error)
 	HandleReq(current *CurrentContent, msg *ReqProto)
 	HandleRsp(current *CurrentContent, msg *RspProto)
-	HashProcessor(sess *Session) (processorID int)
+	HashProcessor(current *CurrentContent) (processorID int)
 }
 
 type RpcFuncException func(rspCode int32)
@@ -71,7 +72,7 @@ func NewServiceRpc(imp RpcService, encode int) *ServiceRpc {
 	return svr
 }
 
-func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error { //remotefunction functionparams callback exception
+func (service *ServiceRpc) UdpRpcCall(sess *Session, peer net.Addr, funcName string, params ...interface{}) error { //remotefunction functionparams callback exception
 	var rpcReq rpcRequest
 	rpcReq.timeout = time.Now().Unix() + TimeOut
 	rpcReq.req.FuncName = funcName
@@ -118,7 +119,11 @@ func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...int
 	service.rpcRequests[rpcReq.req.ReqCmdSeq] = &rpcReq
 	service.rpcMutex.Unlock()
 
-	return service.sendRpcReq(sess, rpcReq.req)
+	return service.sendRpcReq(sess, peer, rpcReq.req)
+}
+
+func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error { //remotefunction functionparams callback exception
+	return service.UdpRpcCall(sess, nil, funcName, params...)
 }
 
 func (service *ServiceRpc) Init() bool {
@@ -150,8 +155,8 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	m, ok := reflect.TypeOf(service.imp).MethodByName(req.FuncName)
 	if !ok {
 		rsp.RspCode = RpcErrNoRemoteFunc
-		service.sendRpcRsp(current.Sess, rsp)
-		SysLog.Error("no rpc funciton:%s", req.FuncName)
+		service.sendRpcRsp(current, rsp)
+		SysLog.Error("no rpc funciton: %s", req.FuncName)
 		return
 	}
 
@@ -171,7 +176,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		}
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
-			service.sendRpcRsp(current.Sess, rsp)
+			service.sendRpcRsp(current, rsp)
 			SysLog.Error("funciton %s param unpack failed: %s", req.FuncName, e.Error())
 			return
 		}
@@ -193,13 +198,13 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		e := spbSend.pack(uint32(i+1), v.Interface(), true, true)
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
-			service.sendRpcRsp(current.Sess, rsp)
+			service.sendRpcRsp(current, rsp)
 			SysLog.Error("funciton %s param pack failed: %s", req.FuncName, e.Error())
 			return
 		}
 	}
 	rsp.RspData = spbSend.buf
-	service.sendRpcRsp(current.Sess, rsp)
+	service.sendRpcRsp(current, rsp)
 }
 
 func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
@@ -281,6 +286,7 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 	if msgLen < 4 || msgLen >= 1024*1024*16 {
 		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
 	}
+
 	if len(data) < int(msgLen) {
 		return 0, 0, nil, nil
 	}
@@ -313,8 +319,8 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 	}
 }
 
-func (service *ServiceRpc) HashProcessor(sess *Session, msgID uint64, msg interface{}) (processorID int) {
-	return service.imp.HashProcessor(sess)
+func (service *ServiceRpc) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	return service.imp.HashProcessor(current)
 }
 
 func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
@@ -336,37 +342,45 @@ func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
 	return spbMsg.buf, nil
 }
 
-func (service *ServiceRpc) SendReq(sess *Session, req ReqProto) error {
+func (service *ServiceRpc) SendUdpReq(sess *Session, peer net.Addr, req ReqProto) error {
 	buf, e := encodeProtocol(&req, service.encode)
 	if e != nil {
 		return e
 	}
-	return sess.Send(buf)
+	return sess.Send(buf, peer)
 }
 
-func (service *ServiceRpc) SendRsp(sess *Session, rsp RspProto) error {
+func (service *ServiceRpc) SendUdpRsp(sess *Session, peer net.Addr, rsp RspProto) error {
 	buf, e := encodeProtocol(&rsp, service.encode)
 	if e != nil {
 		return e
 	}
 	buf[0] |= 0x1
-	return sess.Send(buf)
+	return sess.Send(buf, peer)
 }
 
-func (service *ServiceRpc) sendRpcReq(sess *Session, req ReqProto) error {
+func (service *ServiceRpc) SendReq(sess *Session, req ReqProto) error {
+	return service.SendUdpReq(sess, nil, req)
+}
+
+func (service *ServiceRpc) SendRsp(sess *Session, rsp RspProto) error {
+	return service.SendUdpRsp(sess, nil, rsp)
+}
+
+func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req ReqProto) error {
 	buf, e := encodeProtocol(&req, service.encode)
 	if e != nil {
 		return e
 	}
 	buf[0] |= 0x2
-	return sess.Send(buf)
+	return sess.Send(buf, peer)
 }
 
-func (service *ServiceRpc) sendRpcRsp(sess *Session, rsp RspProto) error {
+func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp RspProto) error {
 	buf, e := encodeProtocol(&rsp, service.encode)
 	if e != nil {
 		return e
 	}
 	buf[0] |= 0x3
-	return sess.Send(buf)
+	return current.Sess.Send(buf, current.Peer)
 }

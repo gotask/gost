@@ -8,6 +8,7 @@ import (
 
 type Connector struct {
 	sess            *Session
+	network         string
 	address         string
 	reconnectMSec   int //Millisecond
 	reconnCount     int
@@ -23,18 +24,21 @@ func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Conn
 		panic(ErrMsgParseNil)
 	}
 
+	network, ipport := parseAddress(address)
+
 	conn := &Connector{
 		sessCloseSignal: make(chan int, 1),
 		reconnSignal:    make(chan int, 1),
 		closer:          make(chan int, 1),
-		address:         address,
+		network:         network,
+		address:         ipport,
 		reconnectMSec:   1000,
 		wg:              &sync.WaitGroup{},
 	}
 
 	conn.sess, _ = newConnSession(msgparse, nil, func(*Session) {
 		conn.sessCloseSignal <- 1
-	}, conn)
+	}, conn, network == "udp")
 	conn.sess.UserData = userdata
 
 	go conn.connect()
@@ -60,7 +64,7 @@ func (conn *Connector) connect() {
 		}
 		conn.reconnCount++
 
-		cn, err := net.Dial("tcp", conn.address)
+		cn, err := net.Dial(conn.network, conn.address)
 		if err != nil {
 			conn.sess.parser.sessionEvent(conn.sess, Close)
 			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
@@ -121,7 +125,6 @@ func (c *Connector) IsClose() bool {
 	default:
 		return false
 	}
-	return false
 }
 
 func (c *Connector) GetID() uint64 {
@@ -130,12 +133,7 @@ func (c *Connector) GetID() uint64 {
 
 func (c *Connector) Send(data []byte) error {
 	c.NotifyReconn()
-	return c.sess.Send(data)
-}
-
-func (c *Connector) AsyncSend(data []byte) error {
-	c.NotifyReconn()
-	return c.sess.AsyncSend(data)
+	return c.sess.Send(data, nil)
 }
 
 func (c *Connector) NotifyReconn() {

@@ -2,7 +2,9 @@ package stnet
 
 import (
 	"fmt"
+	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 )
@@ -12,11 +14,21 @@ type Service struct {
 	Name         string
 	imp          ServiceImp
 	messageQ     []chan sessionMessage
-	isClose      bool
 	connects     map[uint64]*Connect
 	connectMutex sync.Mutex
 	netSignal    *[]chan int
 	threadId     int
+}
+
+func parseAddress(address string) (network string, ipport string) {
+	network = "tcp"
+	ipport = address
+	ipport = strings.Replace(ipport, " ", "", -1)
+	if strings.Contains(address, "udp") {
+		network = "udp"
+		ipport = strings.Replace(ipport, "udp", "", -1)
+	}
+	return network, ipport
 }
 
 func newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
@@ -25,12 +37,21 @@ func newService(name, address string, heartbeat uint32, imp ServiceImp, netSigna
 	}
 	msgTh := make([]chan sessionMessage, ProcessorThreadsNum)
 	for i := 0; i < ProcessorThreadsNum; i++ {
-		msgTh[i] = make(chan sessionMessage, 1024)
+		msgTh[i] = make(chan sessionMessage, 10240)
 	}
-	svr := &Service{nil, name, imp, msgTh, false, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
+	svr := &Service{nil, name, imp, msgTh, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
 
 	if address != "" {
-		lis, err := NewListener(address, svr, heartbeat)
+		var (
+			lis *Listener
+			err error
+		)
+		network, ipport := parseAddress(address)
+		if network == "udp" {
+			lis, err = NewUdpListener(ipport, svr, heartbeat)
+		} else {
+			lis, err = NewListener(ipport, svr, heartbeat)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -57,6 +78,7 @@ func (service *Service) messageThread(current *CurrentContent) int {
 		select {
 		case msg := <-service.messageQ[current.GoroutineID]:
 			current.Sess = msg.Sess
+			current.Peer = msg.peer
 			if msg.Err != nil {
 				service.imp.HandleError(current, msg.Err)
 			} else if msg.DtType == Open {
@@ -85,6 +107,7 @@ type sessionMessage struct {
 	MsgID  int64
 	Msg    interface{}
 	Err    error
+	peer   net.Addr
 }
 
 func (service *Service) Imp() ServiceImp {
@@ -97,7 +120,6 @@ func (service *Service) loop() {
 	service.imp.Loop()
 }
 func (service *Service) destroy() {
-	service.isClose = true
 	if service.Listener != nil {
 		service.Listener.Close()
 	}
@@ -108,7 +130,7 @@ func (service *Service) destroy() {
 	service.connectMutex.Unlock()
 	for i := 0; i < ProcessorThreadsNum; i++ {
 		select {
-		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil}:
+		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil, nil}:
 		default:
 		}
 	}
@@ -116,7 +138,7 @@ func (service *Service) destroy() {
 
 func (service *Service) PushRequest(msgid int64, msg interface{}) error {
 	select {
-	case service.messageQ[service.threadId] <- sessionMessage{nil, Data, msgid, msg, nil}:
+	case service.messageQ[service.threadId] <- sessionMessage{nil, Data, msgid, msg, nil, nil}:
 	default:
 		return fmt.Errorf("service recv queue is full and the message is droped;service=%s;msgid=%d;", service.Name, msgid)
 	}
@@ -136,7 +158,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	}
 	th := service.threadId
 	if e == nil && msg != nil {
-		th = service.imp.HashProcessor(sess, uint64(msgid), msg)
+		th = service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
 		if th >= 0 {
 			th = th % ProcessorThreadsNum
 		} else {
@@ -144,7 +166,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 		}
 	}
 	select {
-	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e}:
+	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e, sess.peer}:
 	default:
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
@@ -160,7 +182,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	to := time.NewTimer(100 * time.Millisecond)
 	select {
-	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil}:
+	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil, nil}:
 	case <-to.C:
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
 	}

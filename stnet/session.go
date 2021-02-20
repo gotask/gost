@@ -45,7 +45,7 @@ type FuncOnOpen = func(*Session)
 type FuncOnClose = func(*Session)
 
 //message recv buffer size
-const (
+var (
 	MsgBuffSize = 1024
 	MinMsgSize  = 64
 
@@ -57,40 +57,59 @@ const (
 //session id
 var GlobalSessionID uint64
 
+type rsData struct {
+	data []byte
+	peer net.Addr
+}
+
 type Session struct {
 	parser    MsgParse
 	id        uint64
 	socket    net.Conn
-	writer    chan []byte
-	hander    chan []byte
+	writer    chan rsData
+	hander    chan rsData
 	closer    chan int
 	wg        *sync.WaitGroup
 	onopen    FuncOnOpen
 	onclose   FuncOnClose
-	isclose   uint32
+	isclose   *Closer
 	heartbeat uint32
 	conn      *Connector
+	isUdp     bool
+	peer      net.Addr
 
 	UserData interface{}
 }
 
-func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, heartbeat uint32) (*Session, error) {
+func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, heartbeat uint32, isudp bool) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
+
+	if isudp {
+		WriterListLen = 10240
+		RecvListLen = 10240
+	}
+
 	sess := &Session{
 		id:        atomic.AddUint64(&GlobalSessionID, 1),
 		socket:    con,
-		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:    make(chan []byte, RecvListLen),
+		writer:    make(chan rsData, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:    make(chan rsData, RecvListLen),
 		closer:    make(chan int),
 		wg:        &sync.WaitGroup{},
 		parser:    msgparse,
 		onopen:    onopen,
 		onclose:   onclose,
+		isclose:   NewCloser(false),
 		heartbeat: heartbeat,
+		isUdp:     isudp,
 	}
-	SysLog.System("session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
+	if isudp {
+		SysLog.System("udp session start, local addr: %s", sess.socket.LocalAddr())
+	} else {
+		SysLog.System("tcp session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
+	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
 
@@ -98,27 +117,34 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 	return sess, nil
 }
 
-func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, c *Connector) (*Session, error) {
+func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, c *Connector, isudp bool) (*Session, error) {
 	if msgparse == nil {
 		return nil, ErrMsgParseNil
 	}
+
+	if isudp {
+		WriterListLen = 10240
+		RecvListLen = 10240
+	}
+
 	sess := &Session{
 		id:        atomic.AddUint64(&GlobalSessionID, 1),
-		writer:    make(chan []byte, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
-		hander:    make(chan []byte, RecvListLen),
+		writer:    make(chan rsData, WriterListLen), //It's OK to leave a Go channel open forever and never close it. When the channel is no longer used, it will be garbage collected.
+		hander:    make(chan rsData, RecvListLen),
 		wg:        &sync.WaitGroup{},
 		parser:    msgparse,
 		onopen:    onopen,
 		onclose:   onclose,
-		isclose:   1,
+		isclose:   NewCloser(true),
 		heartbeat: 0,
 		conn:      c,
+		isUdp:     isudp,
 	}
 	return sess, nil
 }
 
 func (s *Session) RemoteAddr() string {
-	return s.socket.RemoteAddr().Network() + ":" + s.socket.RemoteAddr().String()
+	return s.peer.Network() + ":" + s.peer.String()
 }
 
 func (s *Session) Connector() *Connector {
@@ -137,17 +163,21 @@ func (s *Session) handlePanic() {
 }
 
 func (s *Session) restart(con net.Conn) error {
-	if !atomic.CompareAndSwapUint32(&s.isclose, 1, 0) {
+	if !s.isclose.IsClose() {
 		return ErrSocketIsOpen
 	}
 	s.closer = make(chan int)
 	s.socket = con
 	//writer buffer not should be cleanup
-	//s.writer = make(chan []byte, WriterListLen)
+	//s.writer = make(chan rsData, WriterListLen)
 	//receive buffer maybe half part,so should be cleanup
-	s.hander = make(chan []byte, RecvListLen)
+	s.hander = make(chan rsData, RecvListLen)
 
-	SysLog.System("session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+	if s.isUdp {
+		SysLog.System("udp session restart, local addr: %s", s.socket.LocalAddr())
+	} else {
+		SysLog.System("tcp session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+	}
 
 	asyncDo(s.dosend, s.wg)
 	asyncDo(s.dohand, s.wg)
@@ -159,33 +189,18 @@ func (s *Session) GetID() uint64 {
 	return s.id
 }
 
-func (s *Session) Send(data []byte) error {
-	msg := bp.Alloc(len(data))
-	copy(msg, data)
-
-	to := time.NewTimer(100 * time.Millisecond)
-	select {
-	case <-s.closer:
-		to.Stop()
-		return ErrSocketClosed
-	case s.writer <- msg:
-		to.Stop()
-		return nil
-	case <-to.C:
-		to.Stop()
-		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
-		return ErrSendOverTime
-	}
+func (s *Session) Peer() net.Addr {
+	return s.peer
 }
 
-func (s *Session) AsyncSend(data []byte) error {
+func (s *Session) Send(data []byte, peer net.Addr) error {
 	msg := bp.Alloc(len(data))
 	copy(msg, data)
 
 	select {
 	case <-s.closer:
 		return ErrSocketClosed
-	case s.writer <- msg:
+	case s.writer <- rsData{msg, peer}:
 		return nil
 	default:
 		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
@@ -201,48 +216,63 @@ func (s *Session) Close() {
 }
 
 func (s *Session) IsClose() bool {
-	return atomic.LoadUint32(&s.isclose) > 0
+	return s.isclose.IsClose()
 }
 
 func (s *Session) dosend() {
+	var udpConn *net.UDPConn
+	if s.isUdp {
+		udpConn = s.socket.(*net.UDPConn)
+	}
+
 	for {
 		select {
 		case <-s.closer:
 			return
 		case buf := <-s.writer:
-			//s.socket.SetWriteDeadline(time.Now().Add(time.Millisecond * 300))
-			n := 0
-			for n < len(buf) {
-				n1, err := s.socket.Write(buf[n:])
-				if err != nil {
-					SysLog.Error("session sending error: %s;sessionid=%d", err.Error(), s.id)
-					s.socket.Close()
-					bp.Free(buf)
-					return
+			if s.isUdp {
+				if buf.peer == nil || s.conn != nil {
+					udpConn.Write(buf.data)
+				} else {
+					udpConn.WriteTo(buf.data, buf.peer)
 				}
-				n += n1
+			} else {
+				//s.socket.SetWriteDeadline(time.Now().Add(time.Millisecond * 300))
+				n := 0
+				for n < len(buf.data) {
+					n1, err := s.socket.Write(buf.data[n:])
+					if err != nil {
+						SysLog.Error("session sending error: %s;sessionid=%d", err.Error(), s.id)
+						s.socket.Close()
+						bp.Free(buf.data)
+						return
+					}
+					n += n1
+				}
 			}
-			bp.Free(buf)
+			bp.Free(buf.data)
 		}
 	}
 }
 
 func (s *Session) dorecv() {
 	defer func() {
-		if err := recover(); err != nil {
-			SysLog.Critical("panic error: %v", err)
-			buf := make([]byte, 16384)
-			buf = buf[:runtime.Stack(buf, true)]
-			SysLog.Critical("panic stack: %s", string(buf))
-		}
 		//close socket
 		s.socket.Close()
-		close(s.closer)
+		select {
+		case <-s.closer:
+		default:
+			close(s.closer)
+		}
 		s.wg.Wait()
-		SysLog.System("session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+		s.isclose.Close()
+		if s.isUdp {
+			SysLog.System("udp session close, local addr: %s", s.socket.LocalAddr())
+		} else {
+			SysLog.System("tcp session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+		}
 		s.parser.sessionEvent(s, Close)
 		s.onclose(s)
-		atomic.CompareAndSwapUint32(&s.isclose, 0, 1)
 	}()
 
 	if s.onopen != nil {
@@ -250,14 +280,36 @@ func (s *Session) dorecv() {
 	}
 	s.parser.sessionEvent(s, Open)
 
+	var (
+		udpConn *net.UDPConn
+		peer    net.Addr
+		n       int
+		err     error
+	)
+
+	if s.isUdp {
+		udpConn = s.socket.(*net.UDPConn)
+	} else {
+		peer = s.socket.RemoteAddr()
+	}
+
 	msgbuf := bp.Alloc(MsgBuffSize)
 	for {
-		n, err := s.socket.Read(msgbuf)
-		if err != nil {
+		if s.isUdp {
+			n, peer, err = udpConn.ReadFrom(msgbuf)
+		} else {
+			n, err = s.socket.Read(msgbuf)
+		}
+		if err != nil || n == 0 {
+			SysLog.Error("session recv error: %s,n: %d", err.Error(), n)
 			//defer close
 			return
 		}
-		s.hander <- msgbuf[0:n]
+		s.hander <- rsData{msgbuf[0:n], peer}
+		if s.isUdp {
+			msgbuf = bp.Alloc(MsgBuffSize)
+			continue
+		}
 
 		bufLen := len(msgbuf)
 		if MinMsgSize < bufLen && n*2 < bufLen {
@@ -297,19 +349,24 @@ func (s *Session) dohand() {
 		case <-ht.C:
 			s.parser.sessionEvent(s, HeartBeat)
 		case buf := <-s.hander:
+			s.peer = buf.peer
 			if tempBuf != nil {
-				buf = append(tempBuf, buf...)
+				buf.data = append(tempBuf, buf.data...)
 			}
 		anthorMsg:
-			parseLen := s.parser.ParseMsg(s, buf)
-			if parseLen >= len(buf) {
+			parseLen := s.parser.ParseMsg(s, buf.data)
+			if parseLen >= len(buf.data) {
 				tempBuf = nil
-				bp.Free(buf)
+				bp.Free(buf.data)
 			} else if parseLen > 0 {
-				buf = buf[parseLen:]
+				buf.data = buf.data[parseLen:]
 				goto anthorMsg
 			} else if parseLen == 0 {
-				tempBuf = buf
+				if s.isUdp {
+					SysLog.Error("udp need read all data once,length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), buf.peer.String())
+					continue
+				}
+				tempBuf = buf.data
 			}
 		}
 	}
