@@ -369,6 +369,10 @@ func (b *KVBuffer) Del(k string) bool {
 	return b.lru.Remove(k)
 }
 
+func (b *KVBuffer) Keys() []interface{} {
+	return b.lru.Keys()
+}
+
 func (b *KVBuffer) delNode(n Node) {
 	for _, c := range n.chunks {
 		b.delChunk(c)

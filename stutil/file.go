@@ -62,6 +62,11 @@ func FileRename(path string, to string) error {
 	return os.Rename(path, to)
 }
 
+// move file
+func FileMove(path string, to string) error {
+	return os.Rename(path, to)
+}
+
 // is file
 func IsFile(path string) bool {
 	f, err := os.Stat(path)
@@ -92,6 +97,11 @@ func FileCreate(file string) (*os.File, error) {
 		}
 	}
 	return os.Create(file)
+}
+
+//open rw file
+func FileOpenWrite(path string) (*os.File, error) {
+	return os.OpenFile(path, os.O_RDWR, 0666)
 }
 
 //open appending file

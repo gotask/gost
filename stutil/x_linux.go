@@ -6,6 +6,7 @@ import "C"
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"syscall"
 )
 
@@ -54,4 +55,18 @@ func SysLock() {
 		fmt.Fprintf(os.Stderr, "Error: %s is running\n", os.Args[0])
 		os.Exit(1)
 	}
+}
+
+func Exe(cmddir, cmdstr string) string {
+	cmd := exec.Command("/bin/sh", "-c", cmdstr)
+	cmd.Dir = cmddir
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		return string(out)
+	}
+	if err != nil {
+		return err.Error()
+	}
+
+	return ""
 }
