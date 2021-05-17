@@ -55,7 +55,8 @@ type rpcRequest struct {
 
 type ServiceRpc struct {
 	ServiceBase
-	imp RpcService
+	imp     RpcService
+	methods map[string]reflect.Method
 
 	rpcRequests    map[uint32]*rpcRequest
 	rpcReqSequence uint32
@@ -64,11 +65,18 @@ type ServiceRpc struct {
 	encode int
 }
 
-//encode 1gpb 2spb 3json
+//encode 0gpb 1spb 2json
 func NewServiceRpc(imp RpcService, encode int) *ServiceRpc {
 	svr := &ServiceRpc{}
 	svr.imp = imp
 	svr.encode = encode
+	svr.methods = make(map[string]reflect.Method, 0)
+
+	t := reflect.TypeOf(imp)
+	for i := 0; i < t.NumMethod(); i++ {
+		m := t.Method(i)
+		svr.methods[m.Name] = m
+	}
 	return svr
 }
 
@@ -152,7 +160,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	rsp.RspCmdSeq = req.ReqCmdSeq
 	rsp.FuncName = req.FuncName
 
-	m, ok := reflect.TypeOf(service.imp).MethodByName(req.FuncName)
+	m, ok := service.methods[req.FuncName]
 	if !ok {
 		rsp.RspCode = RpcErrNoRemoteFunc
 		service.sendRpcRsp(current, rsp)

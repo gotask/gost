@@ -9,22 +9,22 @@ import (
 )
 
 const (
-	EncodeTyepGpb  = 1
-	EncodeTyepSpb  = 2
-	EncodeTyepJson = 3
+	EncodeTyepGpb  = 0
+	EncodeTyepSpb  = 1
+	EncodeTyepJson = 2
 )
 
 func Marshal(m interface{}, encodeType int) ([]byte, error) {
-	if encodeType == 1 {
+	if encodeType == EncodeTyepGpb {
 		if reflect.TypeOf(m).Kind() == reflect.Struct {
 			v := reflect.New(reflect.TypeOf(m))
 			v.Elem().Set(reflect.ValueOf(m))
 			m = v.Interface()
 		}
 		return stencode.Marshal(m)
-	} else if encodeType == 2 {
+	} else if encodeType == EncodeTyepSpb {
 		return SpbEncode(m)
-	} else if encodeType == 3 {
+	} else if encodeType == EncodeTyepJson {
 		return json.Marshal(m)
 	}
 	return nil, fmt.Errorf("error encode type %d", encodeType)
@@ -36,11 +36,11 @@ func Unmarshal(data []byte, m interface{}, encodeType int) error {
 		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())
 	}
 
-	if encodeType == 1 {
+	if encodeType == EncodeTyepGpb {
 		return stencode.Unmarshal(data, m)
-	} else if encodeType == 2 {
+	} else if encodeType == EncodeTyepSpb {
 		return SpbDecode(data, m)
-	} else if encodeType == 3 {
+	} else if encodeType == EncodeTyepJson {
 		return json.Unmarshal(data, m)
 	}
 	return fmt.Errorf("error encode type %d", encodeType)

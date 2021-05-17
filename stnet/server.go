@@ -24,7 +24,12 @@ type Server struct {
 	nameServices map[string]*Service
 }
 
-func NewServer(name string, loopmsec uint32) *Server {
+func NewServer(name string, loopmsec uint32, threadnum int) *Server {
+	if threadnum <= 0 {
+		threadnum = 1
+	}
+	ProcessorThreadsNum = threadnum
+
 	//init log
 	NewSysLog()
 
@@ -74,7 +79,7 @@ func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp Ht
 	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
-func (svr *Server) AddSpbRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
+func (svr *Server) AddRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
 	return svr.AddService(name, address, heartbeat, imp, threadId)
 }
 

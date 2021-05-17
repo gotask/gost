@@ -166,6 +166,7 @@ func (s *Session) restart(con net.Conn) error {
 	if !s.isclose.IsClose() {
 		return ErrSocketIsOpen
 	}
+	s.isclose = NewCloser(false)
 	s.closer = make(chan int)
 	s.socket = con
 	//writer buffer not should be cleanup
