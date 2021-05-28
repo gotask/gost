@@ -2,6 +2,7 @@ package stutil
 
 import (
 	"io"
+	"reflect"
 	"unsafe"
 )
 
@@ -140,4 +141,20 @@ func WVarint(b []byte) (x uint64, n int, e error) {
 
 	// The number is too large to represent in a 64-bit value.
 	return 0, 0, io.ErrUnexpectedEOF
+}
+
+func UnsafeBytesToString(b []byte) string {
+	if b == nil {
+		return ""
+	}
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+func UnsafeStringToBytes(s string) []byte {
+	if s == "" {
+		return nil
+	}
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh := reflect.SliceHeader{sh.Data, sh.Len, sh.Len}
+	return *(*[]byte)(unsafe.Pointer(&bh))
 }

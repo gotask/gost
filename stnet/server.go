@@ -30,9 +30,6 @@ func NewServer(name string, loopmsec uint32, threadnum int) *Server {
 	}
 	ProcessorThreadsNum = threadnum
 
-	//init log
-	NewSysLog()
-
 	if loopmsec == 0 {
 		loopmsec = 1
 	}
@@ -108,6 +105,7 @@ func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId
 	return e
 }
 
+/*
 func (svr *Server) PushRequest(servicename string, msgid int64, msg interface{}) error {
 	if servicename == "" {
 		return fmt.Errorf("servicename is null")
@@ -116,7 +114,7 @@ func (svr *Server) PushRequest(servicename string, msgid int64, msg interface{})
 		return s.PushRequest(msgid, msg)
 	}
 	return fmt.Errorf("no service named %s", servicename)
-}
+}*/
 
 type CurrentContent struct {
 	GoroutineID int

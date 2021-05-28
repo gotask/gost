@@ -8,7 +8,8 @@ var (
 	SysLog *stlog.Logger
 )
 
-func NewSysLog() {
+func init() {
 	SysLog = stlog.NewLogger()
-	SysLog.SetFileLevel(stlog.SYSTEM, "net_system.log", 1024*1024*1024, 1, 30) //one file 1G, 30 files max one day
+	SysLog.SetFileLevel(stlog.SYSTEM, "net_system.log", 1024*1024*1024, 0, 1)
+	SysLog.SetTermLevel(stlog.CLOSE)
 }

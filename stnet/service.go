@@ -136,19 +136,36 @@ func (service *Service) destroy() {
 	}
 }
 
-func (service *Service) PushRequest(msgid int64, msg interface{}) error {
+/*
+func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{}) error {
+	th := service.getProcessor(sess, msgid, msg)
+	m := sessionMessage{sess, Data, msgid, msg, nil, nil}
+	if sess != nil {
+		m.peer = sess.peer
+	}
 	select {
-	case service.messageQ[service.threadId] <- sessionMessage{nil, Data, msgid, msg, nil, nil}:
+	case service.messageQ[th] <- m:
 	default:
 		return fmt.Errorf("service recv queue is full and the message is droped;service=%s;msgid=%d;", service.Name, msgid)
 	}
 
 	//wakeup logic thread
 	select {
-	case (*service.netSignal)[service.threadId] <- 1:
+	case (*service.netSignal)[th] <- 1:
 	default:
 	}
 	return nil
+}*/
+
+func (service *Service) getProcessor(sess *Session, msgid int64, msg interface{}) int {
+	th := service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
+	if th > 0 {
+		th = th % ProcessorThreadsNum
+	} else {
+		th = service.threadId
+	}
+
+	return th
 }
 
 func (service *Service) ParseMsg(sess *Session, data []byte) int {
@@ -156,15 +173,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	th := service.threadId
-	if e == nil && msg != nil {
-		th = service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
-		if th >= 0 {
-			th = th % ProcessorThreadsNum
-		} else {
-			th = service.threadId
-		}
-	}
+	th := service.getProcessor(sess, msgid, msg)
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e, sess.peer}:
 	default:
@@ -180,9 +189,15 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 }
 
 func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
+	th := service.getProcessor(sess, 0, nil)
 	to := time.NewTimer(100 * time.Millisecond)
 	select {
-	case service.messageQ[service.threadId] <- sessionMessage{sess, cmd, 0, nil, nil, nil}:
+	case service.messageQ[th] <- sessionMessage{sess, cmd, 0, nil, nil, sess.peer}:
+		//wakeup logic thread
+		select {
+		case (*service.netSignal)[th] <- 1:
+		default:
+		}
 	case <-to.C:
 		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
 	}

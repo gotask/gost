@@ -171,7 +171,13 @@ func (log *Logger) Close() {
 		Level: CLOSE,
 	}
 	log.recv <- rec
-	close(log.clos)
+
+	select {
+	case <-log.clos:
+		return
+	default:
+		close(log.clos)
+	}
 	<-log.wait
 
 	if log.fileWrite != nil {
@@ -278,6 +284,6 @@ func NewFileLogger(fname string) *Logger {
 
 func NewFileLoggerWithoutTerm(fname string) *Logger {
 	logger := NewFileLogger(fname)
-	logger.SetTermLevel(CRITICAL)
+	logger.SetTermLevel(CLOSE)
 	return logger
 }

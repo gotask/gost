@@ -213,6 +213,7 @@ func (s *Session) Close() {
 	if s.IsClose() {
 		return
 	}
+	SysLog.System("session close, local addr: %s", s.socket.LocalAddr())
 	s.socket.Close()
 }
 
