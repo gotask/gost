@@ -31,19 +31,21 @@ type LoopService interface {
 }
 
 type HttpService interface {
+	Init() bool
+	Loop()
 	Handle(current *CurrentContent, req *http.Request, e error)
 	HashProcessor(current *CurrentContent, req *http.Request) (processorID int)
 }
 
-func RspOk(current *CurrentContent) {
+func HttpRspOk(current *CurrentContent) {
 	sRspPayload := "HTTP/1.1 200 OK\r\nContent-Length:0\r\n\r\n"
 	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }
-func Rsp404(current *CurrentContent) {
+func HttpRsp404(current *CurrentContent) {
 	sRspPayload := "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
 	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }
-func RspString(current *CurrentContent, rsp string) {
+func HttpRspString(current *CurrentContent, rsp string) {
 	sRspPayload := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Length:%d\r\n\r\n%s", len(rsp), rsp)
 	current.Sess.Send([]byte(sRspPayload), current.Peer)
 }

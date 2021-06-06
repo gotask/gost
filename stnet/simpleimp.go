@@ -64,6 +64,14 @@ type ServiceHttp struct {
 	imp HttpService
 }
 
+func (service *ServiceHttp) Init() bool {
+	return service.imp.Init()
+}
+
+func (service *ServiceHttp) Loop() {
+	service.imp.Loop()
+}
+
 func (service *ServiceHttp) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
 	req := msg.(*http.Request)
 	service.imp.Handle(current, req, nil)
@@ -101,7 +109,10 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 	return dataLen, 0, req, nil
 }
 func (service *ServiceHttp) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	req := msg.(*http.Request)
+	var req *http.Request
+	if msg != nil {
+		req = msg.(*http.Request)
+	}
 	return service.imp.HashProcessor(current, req)
 }
 

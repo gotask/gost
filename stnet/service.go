@@ -189,7 +189,11 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 }
 
 func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
-	th := service.getProcessor(sess, 0, nil)
+	th := service.threadId
+	if cmd == Data {
+		th = service.getProcessor(sess, 0, nil)
+	}
+
 	to := time.NewTimer(100 * time.Millisecond)
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, cmd, 0, nil, nil, sess.peer}:

@@ -3,7 +3,9 @@ package stutil
 import (
 	"bytes"
 	"crypto/tls"
+	"io"
 	"io/ioutil"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -59,8 +61,45 @@ func (req *HttpRequest) Cookie(cookie string) *HttpRequest {
 }
 
 func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
+	if req.urlValue == nil {
+		req.urlValue = make(url.Values)
+	}
 	req.urlValue.Set(k, v)
 	return req
+}
+
+//params	post form的数据
+//nameField	请求地址上传文件对应field
+//fileName	文件名
+//file	文件
+func (req *HttpRequest) FormFile(params map[string]string, nameField, fileName string, file io.Reader) (*HttpRequest, error) {
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+
+	formFile, err := writer.CreateFormFile(nameField, fileName)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = io.Copy(formFile, file)
+	if err != nil {
+		return nil, err
+	}
+
+	for key, val := range params {
+		_ = writer.WriteField(key, val)
+	}
+
+	err = writer.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	req.binData = body.Bytes()
+	req.Header("Content-Type", writer.FormDataContentType())
+	//req.Header.Add("Content-Type", writer.FormDataContentType())
+
+	return req, nil
 }
 
 func (req *HttpRequest) FormJson(s string) *HttpRequest {
