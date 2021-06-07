@@ -1,4 +1,7 @@
 // app_windows.go
+
+// +build windows
+
 package stutil
 
 import "os/exec"
