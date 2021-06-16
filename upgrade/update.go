@@ -55,6 +55,9 @@ func Update() {
 		LOG.Error("update error: cannot move file %s, %s", bin, e.Error())
 		return
 	}
+	if runtime.GOOS != "windows" {
+		os.Chmod(bin, 0777)
+	}
 
 	var cmd string
 	for i, s := range os.Args {

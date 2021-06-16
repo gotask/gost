@@ -67,6 +67,9 @@ func StartClient(remote string, ver uint32) error {
 					if e != nil {
 						break
 					}
+					if runtime.GOOS != "windows" {
+						os.Chmod(binname, 0777)
+					}
 					var cmd string
 					for i, s := range os.Args {
 						if i == 0 {
