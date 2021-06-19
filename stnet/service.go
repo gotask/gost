@@ -1,7 +1,6 @@
 package stnet
 
 import (
-	"fmt"
 	"net"
 	"runtime"
 	"strings"
@@ -18,6 +17,7 @@ type Service struct {
 	connectMutex sync.Mutex
 	netSignal    *[]chan int
 	threadId     int
+	svr          *Server
 }
 
 func parseAddress(address string) (network string, ipport string) {
@@ -29,36 +29,6 @@ func parseAddress(address string) (network string, ipport string) {
 		ipport = strings.Replace(ipport, "udp", "", -1)
 	}
 	return network, ipport
-}
-
-func newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
-	if imp == nil || netSignal == nil {
-		return nil, fmt.Errorf("ServiceImp should not be nil")
-	}
-	msgTh := make([]chan sessionMessage, ProcessorThreadsNum)
-	for i := 0; i < ProcessorThreadsNum; i++ {
-		msgTh[i] = make(chan sessionMessage, 10240)
-	}
-	svr := &Service{nil, name, imp, msgTh, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId}
-
-	if address != "" {
-		var (
-			lis *Listener
-			err error
-		)
-		network, ipport := parseAddress(address)
-		if network == "udp" {
-			lis, err = NewUdpListener(ipport, svr, heartbeat)
-		} else {
-			lis, err = NewListener(ipport, svr, heartbeat)
-		}
-		if err != nil {
-			return nil, err
-		}
-		svr.Listener = lis
-	}
-
-	return svr, nil
 }
 
 func (service *Service) handlePanic() {
@@ -128,7 +98,7 @@ func (service *Service) destroy() {
 		v.destroy()
 	}
 	service.connectMutex.Unlock()
-	for i := 0; i < ProcessorThreadsNum; i++ {
+	for i := 0; i < service.svr.ProcessorThreadsNum; i++ {
 		select {
 		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil, nil}:
 		default:
@@ -160,7 +130,7 @@ func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{})
 func (service *Service) getProcessor(sess *Session, msgid int64, msg interface{}) int {
 	th := service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
 	if th > 0 {
-		th = th % ProcessorThreadsNum
+		th = th % service.svr.ProcessorThreadsNum
 	} else {
 		th = service.threadId
 	}
@@ -250,9 +220,7 @@ func (ct *Connect) Imp() ServiceImp {
 func (ct *Connect) Close() {
 	go ct.destroy()
 	ct.Master.connectMutex.Lock()
-	if _, ok := ct.Master.connects[ct.GetID()]; ok {
-		delete(ct.Master.connects, ct.GetID())
-	}
+	delete(ct.Master.connects, ct.GetID())
 	ct.Master.connectMutex.Unlock()
 }
 func (ct *Connect) destroy() {

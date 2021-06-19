@@ -349,7 +349,9 @@ func (s *Session) dohand() {
 		case <-s.closer:
 			return
 		case <-ht.C:
-			s.parser.sessionEvent(s, HeartBeat)
+			if s.heartbeat > 0 {
+				s.parser.sessionEvent(s, HeartBeat)
+			}
 		case buf := <-s.hander:
 			s.peer = buf.peer
 			if tempBuf != nil {

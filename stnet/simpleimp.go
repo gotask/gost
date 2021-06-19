@@ -55,7 +55,7 @@ func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int
 }
 
 func (service *ServiceEcho) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
+	return int(current.Sess.GetID())
 }
 
 //ServiceHttp
@@ -90,12 +90,12 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 		nd := data[ls+16:]
 		end := bytes.IndexByte(nd, '\r')
 		if end < 0 {
-			return len(data), 0, nil, fmt.Errorf("error http header formate.")
+			return len(data), 0, nil, fmt.Errorf("error http header formate")
 		}
 		leng := nd[:end]
 		l, e := strconv.Atoi(string(leng))
 		if e != nil {
-			return len(data), 0, nil, fmt.Errorf("error http header formate.")
+			return len(data), 0, nil, fmt.Errorf("error http header formate")
 		}
 		dataLen += l
 		if len(data) < dataLen {
@@ -166,7 +166,7 @@ func (service *ServiceProxyS) Unmarshal(sess *Session, data []byte) (lenParsed i
 	return len(data), -1, nil, nil
 }
 func (service *ServiceProxyS) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
+	return int(current.Sess.GetID())
 }
 
 type ServiceProxyC struct {
@@ -178,5 +178,5 @@ func (service *ServiceProxyC) Unmarshal(sess *Session, data []byte) (lenParsed i
 	return len(data), -1, nil, nil
 }
 func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	return int(current.Sess.GetID() % uint64(ProcessorThreadsNum))
+	return int(current.Sess.GetID())
 }

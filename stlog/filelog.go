@@ -69,7 +69,7 @@ func (w *FileLogWriter) write(msg string) error {
 	if w.file == nil {
 		err := w.newFileWriter()
 		if err != nil {
-			fmt.Fprint(os.Stderr, "log file error: %s\n", err)
+			fmt.Fprintf(os.Stderr, "log file error: %s\n", err)
 			return err
 		}
 	}

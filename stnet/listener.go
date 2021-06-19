@@ -39,8 +39,8 @@ func NewListener(address string, msgparse MsgParse, heartbeat uint32) (*Listener
 		sessMap:   make(map[uint64]*Session),
 	}
 
+	lis.waitExit.Add(1)
 	go func() {
-		lis.waitExit.Add(1)
 		for !lis.isclose.IsClose() {
 			conn, err := lis.lst.Accept()
 			if err != nil {
@@ -90,9 +90,8 @@ func NewUdpListener(address string, msgparse MsgParse, heartbeat uint32) (*Liste
 		sessMap:   make(map[uint64]*Session),
 	}
 
+	lis.waitExit.Add(1)
 	go func() {
-		lis.waitExit.Add(1)
-
 		for !lis.isclose.IsClose() {
 			if err == nil {
 				NewSession(lis.udpConn, msgparse, nil, func(con *Session) {

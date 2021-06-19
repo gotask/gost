@@ -70,8 +70,8 @@ type ServiceRpc struct {
 func NewServiceRpc(imp RpcService) *ServiceRpc {
 	svr := &ServiceRpc{}
 	svr.imp = imp
-	svr.rpcRequests = make(map[uint32]*rpcRequest, 0)
-	svr.methods = make(map[string]reflect.Method, 0)
+	svr.rpcRequests = make(map[uint32]*rpcRequest)
+	svr.methods = make(map[string]reflect.Method)
 
 	t := reflect.TypeOf(imp)
 	for i := 0; i < t.NumMethod(); i++ {
@@ -386,7 +386,7 @@ func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
 	spbMsg.packData(data)
 	flag := spbMsg.buf[0]
 	if flag > 0 {
-		return nil, fmt.Errorf("msg is too long: %d,max size is 16k.", msglen)
+		return nil, fmt.Errorf("msg is too long: %d,max size is 16k", msglen)
 	}
 	return spbMsg.buf, nil
 }

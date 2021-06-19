@@ -292,7 +292,7 @@ func (spb *Spb) unpackByte(n int) (x []byte, err error) {
 	if spb.index+n > len(spb.buf) {
 		return nil, errNoEnoughData
 	}
-	x = make([]byte, n, n)
+	x = make([]byte, n)
 	copy(x, spb.buf[spb.index:spb.index+n])
 	spb.index = spb.index + n
 	return

@@ -7,11 +7,6 @@ import (
 	"time"
 )
 
-//number of threads in server.
-var (
-	ProcessorThreadsNum = 128
-)
-
 type Server struct {
 	name     string
 	loopmsec uint32
@@ -22,29 +17,61 @@ type Server struct {
 	netSignal []chan int
 
 	nameServices map[string]*Service
+
+	ProcessorThreadsNum int //number of threads in server.
 }
 
 func NewServer(name string, loopmsec uint32, threadnum int) *Server {
 	if threadnum <= 0 {
 		threadnum = 1
 	}
-	ProcessorThreadsNum = threadnum
 
 	if loopmsec == 0 {
 		loopmsec = 1
 	}
 	svr := &Server{}
+	svr.ProcessorThreadsNum = threadnum
 	svr.name = name
 	svr.loopmsec = loopmsec
 	svr.services = make(map[int][]*Service)
 	svr.isClose = NewCloser(false)
 	svr.nameServices = make(map[string]*Service)
 
-	svr.netSignal = make([]chan int, ProcessorThreadsNum)
-	for i := 0; i < ProcessorThreadsNum; i++ {
+	svr.netSignal = make([]chan int, svr.ProcessorThreadsNum)
+	for i := 0; i < svr.ProcessorThreadsNum; i++ {
 		svr.netSignal[i] = make(chan int, 1)
 	}
 	return svr
+}
+
+func (svr *Server) newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
+	if imp == nil || netSignal == nil {
+		return nil, fmt.Errorf("ServiceImp should not be nil")
+	}
+	msgTh := make([]chan sessionMessage, svr.ProcessorThreadsNum)
+	for i := 0; i < svr.ProcessorThreadsNum; i++ {
+		msgTh[i] = make(chan sessionMessage, 10240)
+	}
+	sve := &Service{nil, name, imp, msgTh, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId, svr}
+
+	if address != "" {
+		var (
+			lis *Listener
+			err error
+		)
+		network, ipport := parseAddress(address)
+		if network == "udp" {
+			lis, err = NewUdpListener(ipport, sve, heartbeat)
+		} else {
+			lis, err = NewListener(ipport, sve, heartbeat)
+		}
+		if err != nil {
+			return nil, err
+		}
+		sve.Listener = lis
+	}
+
+	return sve, nil
 }
 
 //must be called before server started.
@@ -52,8 +79,8 @@ func NewServer(name string, loopmsec uint32, threadnum int) *Server {
 //when heartbeat(second)=0,heartbeat will be close.
 //call service.NewConnect start a connector
 func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
-	threadId = threadId % ProcessorThreadsNum
-	s, e := newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
+	threadId = threadId % svr.ProcessorThreadsNum
+	s, e := svr.newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
 	if e != nil {
 		return nil, e
 	}
@@ -90,11 +117,11 @@ func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId
 	}
 	s := &ServiceProxyS{}
 	s.remote = c
-	addr := make([]string, len(proxyaddr), len(proxyaddr))
+	addr := make([]string, len(proxyaddr))
 	copy(addr, proxyaddr)
 	s.remoteip = addr
 	if len(addr) > 1 {
-		weight := make([]int, len(proxyweight), len(proxyweight))
+		weight := make([]int, len(proxyweight))
 		copy(weight, proxyweight)
 		for i := 1; i < len(weight); i++ {
 			weight[i] += weight[i-1]
@@ -135,9 +162,8 @@ func (svr *Server) Start() error {
 	}
 
 	for k, v := range svr.services {
+		svr.wg.Add(1)
 		go func(threadIdx int, ms []*Service, all []*Service) {
-			svr.wg.Add(1)
-
 			current := &CurrentContent{GoroutineID: threadIdx}
 			lastLoopTime := time.Now()
 			needD := time.Duration(svr.loopmsec) * time.Millisecond
@@ -171,13 +197,12 @@ func (svr *Server) Start() error {
 		}(k, v, allServices)
 	}
 
-	for i := 0; i < ProcessorThreadsNum; i++ {
+	for i := 0; i < svr.ProcessorThreadsNum; i++ {
 		if _, ok := svr.services[i]; ok {
 			continue
 		}
+		svr.wg.Add(1)
 		go func(idx int, ss []*Service) {
-			svr.wg.Add(1)
-
 			current := &CurrentContent{GoroutineID: idx}
 			for !svr.isClose.IsClose() {
 				nmsg := 0
@@ -185,9 +210,8 @@ func (svr *Server) Start() error {
 					nmsg += s.messageThread(current)
 				}
 				if nmsg == 0 {
-					select { //wait for new message
-					case <-svr.netSignal[idx]:
-					}
+					//wait for new message
+					<-svr.netSignal[idx]
 				}
 			}
 			SysLog.System("%d thread quit.", idx)
@@ -205,23 +229,24 @@ func (svr *Server) Stop() {
 			s.destroy()
 		}
 	}
+	SysLog.System("network stop~~~~~~")
 
 	//stop logic work
 	svr.isClose.Close()
 	//wakeup logic thread
-	for i := 0; i < ProcessorThreadsNum; i++ {
+	for i := 0; i < svr.ProcessorThreadsNum; i++ {
 		select {
 		case svr.netSignal[i] <- 1:
 		default:
 		}
 	}
-
 	svr.wg.Wait()
+	SysLog.System("logic stop~~~~~~")
+
 	for _, v := range svr.services {
 		for _, s := range v {
 			s.imp.Destroy()
 		}
 	}
 	SysLog.Debug("server closed~~~~~~")
-	SysLog.Close()
 }

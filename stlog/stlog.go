@@ -87,9 +87,15 @@ type Logger struct {
 func (log *Logger) intLogf(lvl Level, format string, args ...interface{}) {
 	// Determine caller func
 	pc, file, lineno, ok := runtime.Caller(3)
+	pc1, _, _, ok1 := runtime.Caller(4)
 	src := ""
 	if ok {
-		src = fmt.Sprintf("%s:%s:%d", path.Base(file), path.Base(runtime.FuncForPC(pc).Name()), lineno)
+		var f string
+		if ok1 {
+			f = path.Base(runtime.FuncForPC(pc1).Name()) + "-"
+		}
+		f += path.Base(runtime.FuncForPC(pc).Name())
+		src = fmt.Sprintf("%s:%s:%d", path.Base(file), f, lineno)
 	}
 
 	msg := format
