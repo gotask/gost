@@ -32,7 +32,7 @@ func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Conn
 		closer:          make(chan int, 1),
 		network:         network,
 		address:         ipport,
-		reconnectMSec:   1000,
+		reconnectMSec:   100,
 		wg:              &sync.WaitGroup{},
 	}
 

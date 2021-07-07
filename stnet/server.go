@@ -151,6 +151,8 @@ type CurrentContent struct {
 }
 
 func (svr *Server) Start() error {
+	logOpen()
+
 	allServices := make([]*Service, 0)
 	for _, v := range svr.services {
 		allServices = append(allServices, v...)
@@ -249,4 +251,5 @@ func (svr *Server) Stop() {
 		}
 	}
 	SysLog.Debug("server closed~~~~~~")
+	logClose()
 }

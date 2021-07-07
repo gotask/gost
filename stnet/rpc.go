@@ -66,7 +66,6 @@ type ServiceRpc struct {
 	rpcMutex       sync.Mutex
 }
 
-//encode 0gpb 1spb 2json
 func NewServiceRpc(imp RpcService) *ServiceRpc {
 	svr := &ServiceRpc{}
 	svr.imp = imp
@@ -81,7 +80,7 @@ func NewServiceRpc(imp RpcService) *ServiceRpc {
 	return svr
 }
 
-//syncORasync remotesessino udppeer remotefunction functionparams callback exception
+//rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
 func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
 	var rpcReq rpcRequest
 	rpcReq.timeout = time.Now().Unix() + TimeOut
@@ -156,7 +155,7 @@ func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, f
 	return nil
 }
 
-//remotesessino remotefunction(string) functionparams callback(could nil) exception(could nil)
+//RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil)
 func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error {
 	return service.rpc_call(false, sess, nil, funcName, params...)
 }
