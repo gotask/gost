@@ -203,7 +203,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	if !ok {
 		rsp.RspCode = RpcErrNoRemoteFunc
 		service.sendRpcRsp(current, rsp)
-		SysLog.Error("no rpc funciton: %s", req.FuncName)
+		SysLog.Error("no rpc function: %s", req.FuncName)
 		return
 	}
 
@@ -220,7 +220,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current, rsp)
-			SysLog.Error("funciton %s param unpack failed: %s", req.FuncName, e.Error())
+			SysLog.Error("function %s param unpack failed: %s", req.FuncName, e.Error())
 			return
 		}
 		if t.Kind() == reflect.Ptr {
@@ -242,7 +242,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current, rsp)
-			SysLog.Error("funciton %s param pack failed: %s", req.FuncName, e.Error())
+			SysLog.Error("function %s param pack failed: %s", req.FuncName, e.Error())
 			return
 		}
 	}

@@ -59,7 +59,7 @@ func (a mapValSort) Len() int           { return len(a) }
 func (a mapValSort) Less(i, j int) bool { return less(a[i].B, a[j].B) }
 func (a mapValSort) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 
-func SortMap(mp interface{}, byKey bool) []Pair {
+func SortMap(mp interface{}, byKey, isDesc bool) []Pair {
 	var res []Pair
 	v := reflect.ValueOf(mp)
 	if v.Kind() != reflect.Map {
@@ -76,6 +76,12 @@ func SortMap(mp interface{}, byKey bool) []Pair {
 		sort.Sort(mapKeySort(res))
 	} else {
 		sort.Sort(mapValSort(res))
+	}
+
+	if isDesc {
+		for from, to := 0, len(res)-1; from < to; from, to = from+1, to-1 {
+			res[from], res[to] = res[to], res[from]
+		}
 	}
 	return res
 }
