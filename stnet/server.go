@@ -103,7 +103,18 @@ func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp Ht
 	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
+//NewServiceRpc
 func (svr *Server) AddRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, imp, threadId)
+}
+
+//NewServiceSdpRpc
+func (svr *Server) AddSdpRpcService(name, address string, heartbeat uint32, imp *ServiceSdpRpc, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, imp, threadId)
+}
+
+func (svr *Server) AddSdpRpcClient(name, address string, heartbeat uint32, imp *ServiceSdpRpc, threadId int) (*Service, error) {
+	imp.isClient = true
 	return svr.AddService(name, address, heartbeat, imp, threadId)
 }
 

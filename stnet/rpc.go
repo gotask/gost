@@ -81,6 +81,7 @@ func NewServiceRpc(imp RpcService) *ServiceRpc {
 }
 
 //rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
+//exception function: func(int32){}
 func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
 	var rpcReq rpcRequest
 	rpcReq.timeout = time.Now().Unix() + TimeOut
@@ -313,7 +314,7 @@ func (service *ServiceRpc) HandleError(current *CurrentContent, err error) {
 	service.imp.HandleError(current, err)
 }
 
-func spbLen(b []byte) uint32 {
+func msgLen(b []byte) uint32 {
 	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 //| uint32(b[0])<<24
 }
 
@@ -321,7 +322,7 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
-	msgLen := spbLen(data)
+	msgLen := msgLen(data)
 	if msgLen < 4 || msgLen >= 1024*1024*16 {
 		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
 	}
