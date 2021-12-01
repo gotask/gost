@@ -72,9 +72,6 @@ func GenGOFile(user, pwd, ip string, port int, dbname, packagename string) error
 
 func getGOType(typ string) string {
 	typ = strings.ToLower(typ)
-	if typ == "bit" {
-		return "byte"
-	}
 	if typ == "bool" {
 		return "bool"
 	}
@@ -104,7 +101,7 @@ func getGOType(typ string) string {
 	if strings.Contains(typ, "char") || strings.Contains(typ, "text") {
 		return "string"
 	}
-	if strings.Contains(typ, "blob") {
+	if strings.Contains(typ, "bit") || strings.Contains(typ, "blob") || strings.Contains(typ, "binary") {
 		return "[]byte"
 	}
 

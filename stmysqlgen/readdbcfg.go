@@ -13,6 +13,7 @@ type MSColumn struct {
 	Name string
 	Type string
 	Key  string
+	Null bool
 }
 type MSTable struct {
 	Name      string
@@ -95,7 +96,10 @@ func readColumn(db *sql.DB, table *MSTable) error {
 		if err != nil {
 			return err
 		}
-		col := MSColumn{field, typ, key}
+		col := MSColumn{field, typ, key, false}
+		if null == "YES" {
+			col.Null = true
+		}
 		if key == "PRI" {
 			table.PriKeyNum++
 			table.PriKey = col

@@ -113,6 +113,31 @@ func genTableRecordMax(table *MSTable) string {
 	return builder.String()
 }
 
+func genSelectAllCols(table *MSTable) string {
+	var builder strings.Builder
+	for i, c := range table.Cols {
+		if c.Null {
+			//IFNULL(a,'')
+			builder.WriteString("IFNULL(")
+			builder.WriteString(c.Name)
+			typ := strings.ToLower(c.Type)
+			if strings.Contains(typ, "bit") || strings.Contains(typ, "char") || strings.Contains(typ, "text") || strings.Contains(typ, "blob") || strings.Contains(typ, "binary") {
+				builder.WriteString(", '')")
+			} else if typ == "datetime" || typ == "date" || typ == "time" || typ == "timestamp" {
+				builder.WriteString(", DATE('1970-01-01 00:00:00'))")
+			} else {
+				builder.WriteString(", 0)")
+			}
+		} else {
+			builder.WriteString(c.Name)
+		}
+		if i != len(table.Cols)-1 {
+			builder.WriteString(", ")
+		}
+	}
+	return builder.String()
+}
+
 func genSelectOneScan(table *MSTable) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "\tfor rows.Next() {\n\t\tvar result D_%s_%s\n", table.DB, table.Name)
@@ -134,7 +159,10 @@ func genTableSelectOne(table *MSTable) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "//select * from %s.%s where x=? limit 1\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) SelectOne(whereArgs ...interface{}) (*%s, error) {\n", tname, dname)
-	builder.WriteString("\tsqlcmd := \"select * from ")
+	//builder.WriteString("\tsqlcmd := \"select * from ")
+	builder.WriteString("\tsqlcmd := \"select ")
+	builder.WriteString(genSelectAllCols(table))
+	builder.WriteString(" from ")
 	builder.WriteString(table.Name)
 	builder.WriteString(" \"\n")
 	code := `	if len(whereArgs) > 0 {
@@ -175,7 +203,10 @@ func genTableSelectPriKey(table *MSTable) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "//select * from %s.%s where %s=? limit 1\n", table.DB, table.Name, table.PriKey.Name)
 	fmt.Fprintf(&builder, "func (t *%s) SelectPriKey(key %s) (*%s, error) {\n", tname, getGOType(table.PriKey.Type), dname)
-	builder.WriteString("\tsqlcmd := \"select * from ")
+	//builder.WriteString("\tsqlcmd := \"select * from ")
+	builder.WriteString("\tsqlcmd := \"select ")
+	builder.WriteString(genSelectAllCols(table))
+	builder.WriteString(" from ")
 	builder.WriteString(table.Name)
 	builder.WriteString(" where ")
 	builder.WriteString(table.PriKey.Name)
@@ -223,7 +254,10 @@ func genTableSelectAll(table *MSTable) string {
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "//select * from %s.%s where x=?\n", table.DB, table.Name)
 	fmt.Fprintf(&builder, "func (t *%s) Select(whereArgs ...interface{}) ([]%s, error) {\n", tname, dname)
-	builder.WriteString("\tsqlcmd := \"select * from ")
+	//builder.WriteString("\tsqlcmd := \"select * from ")
+	builder.WriteString("\tsqlcmd := \"select ")
+	builder.WriteString(genSelectAllCols(table))
+	builder.WriteString(" from ")
 	builder.WriteString(table.Name)
 	builder.WriteString(" \"\n")
 	code := `	if len(whereArgs) > 0 {
@@ -317,7 +351,7 @@ func genTableReplaceOne(table *MSTable, fun, oper string) string {
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "//replace into %s.%s (x, y, z)values(?, ?, ?)\n", table.DB, table.Name)
-	fmt.Fprintf(&builder, "func (t *%s) %s(data *%s) (sql.Result, error) {\n\tsqlcmd := \"%s into %s (", tname, fun, dname, oper, table.Name)
+	fmt.Fprintf(&builder, "func (t *%s) %s(data %s) (sql.Result, error) {\n\tsqlcmd := \"%s into %s (", tname, fun, dname, oper, table.Name)
 	for i, c := range table.Cols {
 		builder.WriteString(c.Name)
 		if i != len(table.Cols)-1 {
@@ -356,7 +390,7 @@ func genTableReplaceBatch(table *MSTable, fun, oper string) string {
 	dname := "D_" + table.DB + "_" + table.Name
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "//replace into %s.%s (x, y)values(?, ?),(?, ?)\n", table.DB, table.Name)
-	fmt.Fprintf(&builder, "func (t *%s) %s(data []*%s) (sql.Result, error) {\n\tvar sqlcmd strings.Builder\n\tsqlcmd.WriteString(\"%s into %s (", tname, fun, dname, oper, table.Name)
+	fmt.Fprintf(&builder, "func (t *%s) %s(data []%s) (sql.Result, error) {\n\tvar sqlcmd strings.Builder\n\tsqlcmd.WriteString(\"%s into %s (", tname, fun, dname, oper, table.Name)
 	for i, c := range table.Cols {
 		builder.WriteString(c.Name)
 		if i != len(table.Cols)-1 {
