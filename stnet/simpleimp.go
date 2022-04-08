@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/textproto"
 	"strconv"
+	"strings"
 )
 
 //ServiceImpBase
@@ -85,23 +87,49 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 		return 0, 0, nil, nil
 	}
 	dataLen := nIndex + 4
-	ls := bytes.Index(data[0:dataLen], []byte("Content-Length: "))
-	if ls >= 0 { //POST
-		nd := data[ls+16:]
-		end := bytes.IndexByte(nd, '\r')
-		if end < 0 {
-			return len(data), 0, nil, fmt.Errorf("error http header formate")
+	tp := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[0:dataLen])))
+
+	var line string
+	if line, err = tp.ReadLine(); err != nil {
+		return len(data), 0, nil, err
+	}
+	//"GET /foo HTTP/1.1"
+	ss := strings.Split(line, " ")
+	if len(ss) != 3 {
+		return len(data), 0, nil, fmt.Errorf("not http")
+	}
+	if ss[2] != "HTTP/1.1" {
+		return len(data), 0, nil, fmt.Errorf("not http/1.1 method:%s requestURI:%s requestURI:%s", ss[0], ss[1], ss[2])
+	}
+
+	mimeHeader, err := tp.ReadMIMEHeader()
+	if err != nil {
+		return len(data), 0, nil, err
+	}
+
+	cl := mimeHeader.Get("Content-Length")
+	cl = textproto.TrimString(cl)
+	if len(cl) > 0 { //fixed length
+		n, err := strconv.ParseUint(cl, 10, 63)
+		if err != nil {
+			return len(data), 0, nil, fmt.Errorf("bad Content-Length %d", cl)
 		}
-		leng := nd[:end]
-		l, e := strconv.Atoi(string(leng))
-		if e != nil {
-			return len(data), 0, nil, fmt.Errorf("error http header formate")
-		}
-		dataLen += l
+		dataLen += int(n)
 		if len(data) < dataLen {
 			return 0, 0, nil, nil
 		}
+	} else {
+		te := mimeHeader.Get("Transfer-Encoding")
+		te = textproto.TrimString(te)
+		if te == "chunked" {
+			i := bytes.Index(data, []byte{'\r', '\n', '0', '\r', '\n'})
+			if i <= 0 {
+				return 0, 0, nil, nil
+			}
+			dataLen = i + 5
+		}
 	}
+
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data[0:dataLen])))
 	if err != nil {
 		return dataLen, 0, nil, err

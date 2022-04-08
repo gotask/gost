@@ -4,25 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-
-	"github.com/gotask/gost/stencode"
 )
 
 const (
-	EncodeTyepGpb  = 0
-	EncodeTyepSpb  = 1
-	EncodeTyepJson = 2
+	EncodeTyepSpb  = 0
+	EncodeTyepJson = 1
 )
 
 func Marshal(m interface{}, encodeType int) ([]byte, error) {
-	if encodeType == EncodeTyepGpb {
-		if reflect.TypeOf(m).Kind() == reflect.Struct {
-			v := reflect.New(reflect.TypeOf(m))
-			v.Elem().Set(reflect.ValueOf(m))
-			m = v.Interface()
-		}
-		return stencode.Marshal(m)
-	} else if encodeType == EncodeTyepSpb {
+	if encodeType == EncodeTyepSpb {
 		return SpbEncode(m)
 	} else if encodeType == EncodeTyepJson {
 		return json.Marshal(m)
@@ -36,9 +26,7 @@ func Unmarshal(data []byte, m interface{}, encodeType int) error {
 		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())
 	}
 
-	if encodeType == EncodeTyepGpb {
-		return stencode.Unmarshal(data, m)
-	} else if encodeType == EncodeTyepSpb {
+	if encodeType == EncodeTyepSpb {
 		return SpbDecode(data, m)
 	} else if encodeType == EncodeTyepJson {
 		return json.Unmarshal(data, m)
@@ -47,30 +35,7 @@ func Unmarshal(data []byte, m interface{}, encodeType int) error {
 }
 
 func rpcMarshal(spb *Spb, tag uint32, i interface{}) error {
-	ptr := false
-	t := reflect.TypeOf(i)
-	if t.Kind() == reflect.Ptr {
-		ptr = true
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return spb.pack(tag, i, true, true)
-	} else {
-		if !ptr {
-			v := reflect.New(reflect.TypeOf(i))
-			v.Elem().Set(reflect.ValueOf(i))
-			i = v.Interface()
-		}
-
-		data, e := stencode.Marshal(i)
-		if e != nil {
-			return e
-		}
-		spb.packHeader(tag, SpbPackDataType_StructBegin)
-		spb.packNumber(uint64(len(data)))
-		spb.packData(data)
-	}
-	return nil
+	return spb.pack(tag, i, true, true)
 }
 
 func rpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
@@ -78,36 +43,5 @@ func rpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())
 	}
-
-	t := reflect.TypeOf(i)
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-	if t.Kind() != reflect.Struct {
-		return spb.unpack(rv, true)
-	} else {
-		tg, tp, err := spb.unpackHeader()
-		if err != nil {
-			return err
-		}
-		if tag != tg {
-			return fmt.Errorf("Unmarshal tag not equal,%d!=%d", tag, tg)
-		}
-		if tp != SpbPackDataType_StructBegin {
-			return fmt.Errorf("Unmarshal type not struct,is %d", tp)
-		}
-		l, e := spb.unpackNumber()
-		if e != nil {
-			return e
-		}
-		bt, er := spb.unpackByte(int(l))
-		if er != nil {
-			return er
-		}
-		e = stencode.Unmarshal(bt, i)
-		if e != nil {
-			return e
-		}
-	}
-	return nil
+	return spb.unpack(rv, true)
 }

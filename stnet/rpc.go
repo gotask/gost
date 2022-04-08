@@ -39,8 +39,11 @@ type RspProto struct {
 type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
-	HandleReq(current *CurrentContent, msg *ReqProto)
-	HandleRsp(current *CurrentContent, msg *RspProto)
+	
+	//todo: req rsp
+	//HandleReq(current *CurrentContent, msg *ReqProto)
+	//HandleRsp(current *CurrentContent, msg *RspProto)
+
 	HashProcessor(current *CurrentContent) (processorID int)
 }
 
@@ -156,7 +159,7 @@ func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, f
 	return nil
 }
 
-//RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil)
+//RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil, func(rspCode int32))
 func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error {
 	return service.rpc_call(false, sess, nil, funcName, params...)
 }
@@ -297,10 +300,11 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 }
 
 func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
+	//todo: req rsp
 	if msgID == 0 {
-		service.imp.HandleReq(current, msg.(*ReqProto))
+		//service.imp.HandleReq(current, msg.(*ReqProto))
 	} else if msgID == 1 {
-		service.imp.HandleRsp(current, msg.(*RspProto))
+		//service.imp.HandleRsp(current, msg.(*RspProto))
 	} else if msgID == 2 { //rpc req
 		service.handleRpcReq(current, msg.(*ReqProto))
 	} else if msgID == 3 { //rpc rsp
@@ -323,7 +327,7 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 		return 0, 0, nil, nil
 	}
 	msgLen := msgLen(data)
-	if msgLen < 4 || msgLen >= 1024*1024*16 {
+	if msgLen < 4 || msgLen >= uint32(MaxMsgSize) {
 		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
 	}
 

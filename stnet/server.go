@@ -8,7 +8,6 @@ import (
 )
 
 type Server struct {
-	name     string
 	loopmsec uint32
 	//threadid->Services
 	services  map[int][]*Service
@@ -21,7 +20,7 @@ type Server struct {
 	ProcessorThreadsNum int //number of threads in server.
 }
 
-func NewServer(name string, loopmsec uint32, threadnum int) *Server {
+func NewServer(loopmsec uint32, threadnum int) *Server {
 	if threadnum <= 0 {
 		threadnum = 1
 	}
@@ -31,7 +30,6 @@ func NewServer(name string, loopmsec uint32, threadnum int) *Server {
 	}
 	svr := &Server{}
 	svr.ProcessorThreadsNum = threadnum
-	svr.name = name
 	svr.loopmsec = loopmsec
 	svr.services = make(map[int][]*Service)
 	svr.isClose = NewCloser(false)
@@ -74,7 +72,7 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 	return sve, nil
 }
 
-//must be called before server started.
+// AddService must be called before server started.
 //address could be null,then you get a service without listen.
 //when heartbeat(second)=0,heartbeat will be close.
 //call service.NewConnect start a connector
@@ -103,18 +101,8 @@ func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp Ht
 	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
 }
 
-//NewServiceRpc
+// AddRpcService imp:	NewServiceRpc
 func (svr *Server) AddRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, imp, threadId)
-}
-
-//NewServiceSdpRpc
-func (svr *Server) AddSdpRpcService(name, address string, heartbeat uint32, imp *ServiceSdpRpc, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, imp, threadId)
-}
-
-func (svr *Server) AddSdpRpcClient(name, address string, heartbeat uint32, imp *ServiceSdpRpc, threadId int) (*Service, error) {
-	imp.isClient = true
 	return svr.AddService(name, address, heartbeat, imp, threadId)
 }
 

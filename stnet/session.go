@@ -48,6 +48,7 @@ type FuncOnClose = func(*Session)
 var (
 	MsgBuffSize = 1024
 	MinMsgSize  = 64
+	MaxMsgSize  = 2 * 1024 * 1024
 
 	//the length of send queue
 	WriterListLen = 256
@@ -347,6 +348,18 @@ func (s *Session) dohand() {
 		}
 		select {
 		case <-s.closer:
+			//handle the last msg
+			var lastBuf rsData
+			select {
+			case lastBuf = <-s.hander:
+			default:
+			}
+			if tempBuf != nil {
+				lastBuf.data = append(tempBuf, lastBuf.data...)
+			}
+			if lastBuf.data != nil {
+				s.parser.ParseMsg(s, lastBuf.data)
+			}
 			return
 		case <-ht.C:
 			if s.heartbeat > 0 {
@@ -371,6 +384,13 @@ func (s *Session) dohand() {
 					continue
 				}
 				tempBuf = buf.data
+				if len(tempBuf) > MaxMsgSize {
+					s.socket.Close()
+					SysLog.Error("msgbuff too large, length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), s.socket.RemoteAddr())
+				}
+			} else {
+				s.socket.Close()
+				SysLog.Error("parseLen < 0, parseLen: %d, local addr: %s", parseLen, s.socket.LocalAddr())
 			}
 		}
 	}

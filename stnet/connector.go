@@ -18,7 +18,7 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-//reconnect at 0s 1s 4s 9s 16s...;when call send changeAddr NotifyReconn, reconnect at once
+// NewConnector reconnect at 0s 1s 4s 9s 16s...;when call send changeAddr NotifyReconn, reconnect at once
 func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
@@ -46,42 +46,42 @@ func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Conn
 	return conn
 }
 
-func (conn *Connector) connect() {
-	conn.wg.Add(1)
-	defer conn.wg.Done()
-	for !conn.IsClose() {
-		if conn.reconnCount > 0 {
-			to := time.NewTimer(time.Duration(conn.reconnCount*conn.reconnCount*conn.reconnectMSec) * time.Millisecond)
+func (c *Connector) connect() {
+	c.wg.Add(1)
+	defer c.wg.Done()
+	for !c.IsClose() {
+		if c.reconnCount > 0 {
+			to := time.NewTimer(time.Duration(c.reconnCount*c.reconnCount*c.reconnectMSec) * time.Millisecond)
 			select {
-			case <-conn.closer:
+			case <-c.closer:
 				to.Stop()
 				return
-			case <-conn.reconnSignal:
+			case <-c.reconnSignal:
 				to.Stop()
 			case <-to.C:
 				to.Stop()
 			}
 		}
-		conn.reconnCount++
+		c.reconnCount++
 
-		cn, err := net.Dial(conn.network, conn.address)
+		cn, err := net.Dial(c.network, c.address)
 		if err != nil {
-			conn.sess.parser.sessionEvent(conn.sess, Close)
-			SysLog.Error("connect failed;addr=%s;error=%s", conn.address, err.Error())
-			if conn.reconnectMSec < 0 || conn.IsClose() {
+			c.sess.parser.sessionEvent(c.sess, Close)
+			SysLog.Error("connect failed;addr=%s;error=%s", c.address, err.Error())
+			if c.reconnectMSec < 0 || c.IsClose() {
 				break
 			}
 			continue
 		}
 
 		//maybe already be closed
-		if conn.IsClose() {
+		if c.IsClose() {
 			break
 		}
-		conn.sess.restart(cn)
-		conn.reconnCount = 0
-		<-conn.sessCloseSignal
-		if conn.reconnectMSec < 0 || conn.IsClose() {
+		c.sess.restart(cn)
+		c.reconnCount = 0
+		<-c.sessCloseSignal
+		if c.reconnectMSec < 0 || c.IsClose() {
 			break
 		}
 	}

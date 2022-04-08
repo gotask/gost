@@ -15,13 +15,15 @@ type ServiceImp interface {
 	SessionClose(sess *Session)
 	HeartBeatTimeOut(sess *Session)
 
-	//protocol parsed
-	//lenParsed is the length readed from 'data'.
+	// Unmarshal protocol parsed
+	//lenParsed is the length read from 'data'.
 	//msgID and msg are messages parsed from data.
 	//when lenParsed <= 0 or msgID < 0,msg and err will be ignored.
 	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error)
-	//sess msgID msg are returned by func of Unmarshal
-	//processorID is the thread who process this msg;if processorID < 0, it only use main thread of the service.it should between 0-ProcessorThreadsNum.
+	// HashProcessor sess msgID msg are returned by func of Unmarshal
+	//processorID is the thread who process this msg;it should between 1-ProcessorThreadsNum.
+	//if processorID == 0, it only uses main thread of the service.
+	//if processorID < 0, it will use hash of session id.
 	HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int)
 }
 

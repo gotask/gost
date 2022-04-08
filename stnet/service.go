@@ -131,8 +131,11 @@ func (service *Service) getProcessor(sess *Session, msgid int64, msg interface{}
 	th := service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
 	if th > 0 {
 		th = th % service.svr.ProcessorThreadsNum
-	} else {
+	} else if th == 0 {
 		th = service.threadId
+	} else {
+		t := sess.GetID() % uint64(service.svr.ProcessorThreadsNum)
+		th = int(t)
 	}
 
 	return th
