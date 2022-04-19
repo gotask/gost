@@ -195,6 +195,7 @@ func (s *Session) Peer() net.Addr {
 	return s.peer
 }
 
+// Send peer is used in udp
 func (s *Session) Send(data []byte, peer net.Addr) error {
 	msg := bp.Alloc(len(data))
 	copy(msg, data)

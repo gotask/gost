@@ -3,6 +3,7 @@ package stnet
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -38,6 +39,7 @@ func (service *ServiceBase) HeartBeatTimeOut(sess *Session) {
 }
 func (service *ServiceBase) HandleError(current *CurrentContent, err error) {
 	SysLog.Error(err.Error())
+	current.Sess.Close()
 }
 func (service *ServiceBase) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	return len(data), -1, nil, nil
@@ -207,4 +209,64 @@ func (service *ServiceProxyC) Unmarshal(sess *Session, data []byte) (lenParsed i
 }
 func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return int(current.Sess.GetID())
+}
+
+//ServiceJson
+type ServiceJson struct {
+	ServiceBase
+	imp JsonService
+}
+
+func (service *ServiceJson) Init() bool {
+	return service.imp.Init()
+}
+
+func (service *ServiceJson) Loop() {
+	service.imp.Loop()
+}
+
+func (service *ServiceJson) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
+	var d []byte
+	if msg != nil {
+		d = msg.([]byte)
+	}
+	service.imp.Handle(current, JsonProto{msgID, d}, nil)
+}
+func (service *ServiceJson) HandleError(current *CurrentContent, err error) {
+	service.imp.Handle(current, JsonProto{}, err)
+}
+func (service *ServiceJson) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
+	if len(data) < 4 {
+		return 0, 0, nil, nil
+	}
+	msgLen := MsgLen(data)
+	if msgLen < 4 || msgLen >= uint32(MaxMsgSize) {
+		return len(data), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
+	}
+
+	if len(data) < int(msgLen) {
+		return 0, 0, nil, nil
+	}
+	cmd := JsonProto{}
+	e := json.Unmarshal(data[4:msgLen], &cmd)
+	if e != nil {
+		return int(msgLen), 0, nil, e
+	}
+	return int(msgLen), int64(cmd.CmdId), cmd.CmdData, nil
+}
+func (service *ServiceJson) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	var d []byte
+	if msg != nil {
+		d = msg.([]byte)
+	}
+	return service.imp.HashProcessor(current, JsonProto{msgID, d})
+}
+
+func SendJsonCmd(sess *Session, msgID uint64, msg []byte) error {
+	cmd := JsonProto{msgID, msg}
+	buf, e := EncodeProtocol(cmd, EncodeTyepJson)
+	if e != nil {
+		return e
+	}
+	return sess.Send(buf, nil)
 }

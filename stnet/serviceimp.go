@@ -39,6 +39,17 @@ type HttpService interface {
 	HashProcessor(current *CurrentContent, req *http.Request) (processorID int)
 }
 
+type JsonProto struct {
+	CmdId   uint64 `json:"id"`
+	CmdData []byte `json:"cmd"`
+}
+type JsonService interface {
+	Init() bool
+	Loop()
+	Handle(current *CurrentContent, cmd JsonProto, e error)
+	HashProcessor(current *CurrentContent, cmd JsonProto) (processorID int)
+}
+
 func HttpRspOk(current *CurrentContent) {
 	sRspPayload := "HTTP/1.1 200 OK\r\nContent-Length:0\r\n\r\n"
 	current.Sess.Send([]byte(sRspPayload), current.Peer)

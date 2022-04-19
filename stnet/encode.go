@@ -45,3 +45,22 @@ func rpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
 	}
 	return spb.unpack(rv, true)
 }
+
+func MsgLen(b []byte) uint32 {
+	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
+}
+
+func EncodeProtocol(msg interface{}, encode int) ([]byte, error) {
+	data, e := Marshal(msg, encode)
+	if e != nil {
+		return nil, e
+	}
+	msglen := len(data) + 4
+	buff := make([]byte, msglen)
+	buff[0] = byte(msglen >> 24)
+	buff[1] = byte(msglen >> 18)
+	buff[2] = byte(msglen >> 8)
+	buff[3] = byte(msglen)
+	copy(buff[4:], data)
+	return buff, nil
+}

@@ -64,3 +64,41 @@ func main() {
 }
 
 ```
+### Json Server
+```go
+package main
+
+import (
+	"fmt"
+	"github.com/gotask/gost/stnet"
+	"time"
+)
+
+type JsonS struct {
+}
+
+func (j *JsonS) Init() bool {
+	return true
+}
+func (j *JsonS) Loop() {
+
+}
+func (j *JsonS) Handle(current *stnet.CurrentContent, cmd stnet.JsonProto, e error) {
+	fmt.Println(cmd, e)
+	//stnet.SendJsonCmd(current.Sess, cmd.CmdId+1, cmd.CmdData)
+}
+func (j *JsonS) HashProcessor(current *stnet.CurrentContent, cmd stnet.JsonProto) (processorID int) {
+	return -1
+}
+
+func main() {
+	s := stnet.NewServer(10, 32)
+	s.AddJsonService("js", ":8086", 0, &JsonS{}, 1)
+	s.Start()
+
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+```

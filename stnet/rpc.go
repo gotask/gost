@@ -39,7 +39,7 @@ type RspProto struct {
 type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
-	
+
 	//todo: req rsp
 	//HandleReq(current *CurrentContent, msg *ReqProto)
 	//HandleRsp(current *CurrentContent, msg *RspProto)
@@ -318,17 +318,13 @@ func (service *ServiceRpc) HandleError(current *CurrentContent, err error) {
 	service.imp.HandleError(current, err)
 }
 
-func msgLen(b []byte) uint32 {
-	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 //| uint32(b[0])<<24
-}
-
 func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	if len(data) < 4 {
 		return 0, 0, nil, nil
 	}
 	msgLen := msgLen(data)
 	if msgLen < 4 || msgLen >= uint32(MaxMsgSize) {
-		return int(msgLen), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
+		return len(data), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
 	}
 
 	if len(data) < int(msgLen) {
@@ -376,25 +372,6 @@ func (service *ServiceRpc) HashProcessor(current *CurrentContent, msgID uint64, 
 	return service.imp.HashProcessor(current)
 }
 
-func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
-	data, e := Marshal(msg, encode)
-	if e != nil {
-		return nil, e
-	}
-	msglen := len(data) + 4
-	spbMsg := Spb{}
-	spbMsg.packByte(byte(msglen >> 24))
-	spbMsg.packByte(byte(msglen >> 16))
-	spbMsg.packByte(byte(msglen >> 8))
-	spbMsg.packByte(byte(msglen))
-	spbMsg.packData(data)
-	flag := spbMsg.buf[0]
-	if flag > 0 {
-		return nil, fmt.Errorf("msg is too long: %d,max size is 16k", msglen)
-	}
-	return spbMsg.buf, nil
-}
-
 func (service *ServiceRpc) SendUdpReq(sess *Session, peer net.Addr, req ReqProto) error {
 	buf, e := encodeProtocol(&req, 0)
 	if e != nil {
@@ -436,4 +413,27 @@ func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp RspProto) err
 	}
 	buf[0] |= 0x3
 	return current.Sess.Send(buf, current.Peer)
+}
+
+func msgLen(b []byte) uint32 {
+	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 //| uint32(b[0])<<24
+}
+
+func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
+	data, e := Marshal(msg, encode)
+	if e != nil {
+		return nil, e
+	}
+	msglen := len(data) + 4
+	spbMsg := Spb{}
+	spbMsg.packByte(byte(msglen >> 24))
+	spbMsg.packByte(byte(msglen >> 16))
+	spbMsg.packByte(byte(msglen >> 8))
+	spbMsg.packByte(byte(msglen))
+	spbMsg.packData(data)
+	flag := spbMsg.buf[0]
+	if flag > 0 {
+		return nil, fmt.Errorf("msg is too long: %d,max size is 16k", msglen)
+	}
+	return spbMsg.buf, nil
 }
