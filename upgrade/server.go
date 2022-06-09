@@ -14,7 +14,7 @@ var (
 )
 
 func StartServer(address string) error {
-	s = stnet.NewServer("upgradeserver", 100, 8)
+	s = stnet.NewServer(100, 8)
 	s.AddRpcService("upgrade", address, 0, stnet.NewServiceRpc(&UpgradeServer{}), 0)
 	e := s.Start()
 	if e != nil {

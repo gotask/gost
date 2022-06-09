@@ -25,7 +25,7 @@ func StartClient(remote string, ver uint32) error {
 
 	fileName = stutil.FileBase("")
 
-	c = stnet.NewServer("upgradeclient", 100, 1)
+	c = stnet.NewServer(100, 1)
 	rpc = stnet.NewServiceRpc(&UpgradeServer{})
 	svc, e := c.AddRpcService("upgrade", "", 0, rpc, 0)
 	if e != nil {
