@@ -86,12 +86,12 @@ func genDBConnect() string {
 
 	dbname := "DB_" + table.DB
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "func (db *%s) Open(user, pwd, ip string, port int) error {\n", dbname)
+	fmt.Fprintf(&builder, "func (db *%s) Open(user, pwd, addr string) error {\n", dbname)
 	code := `	if db.ConnectTimeout == 0 {
 		db.ConnectTimeout = 5
 	}
 	var conurl strings.Builder
-	fmt.Fprintf(&conurl, "%s:%s@tcp(%s:%d)/%s?parseTime=true&timeout=%ds", user, pwd, ip, port, "` + table.DB + `", db.ConnectTimeout)
+	fmt.Fprintf(&conurl, "%s:%s@tcp(%s)/%s?parseTime=true&timeout=%ds", user, pwd, addr, "` + table.DB + `", db.ConnectTimeout)
 	if db.Charset != "" {
 		fmt.Fprintf(&conurl, "&charset=%s", db.Charset)
 	}
