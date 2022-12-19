@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-//ServiceImpBase
+// ServiceImpBase
 type ServiceBase struct {
 }
 
@@ -48,7 +48,7 @@ func (service *ServiceBase) HashProcessor(current *CurrentContent, msgID uint64,
 	return -1
 }
 
-//ServiceImpEcho
+// ServiceImpEcho
 type ServiceEcho struct {
 	ServiceBase
 }
@@ -62,7 +62,7 @@ func (service *ServiceEcho) HashProcessor(current *CurrentContent, msgID uint64,
 	return int(current.Sess.GetID())
 }
 
-//ServiceHttp
+// ServiceHttp
 type ServiceHttp struct {
 	ServiceBase
 	imp HttpService
@@ -166,6 +166,20 @@ type ServiceProxyS struct {
 	weight   []int
 }
 
+func (service *ServiceProxyS) SessionOpen(sess *Session) {
+	rip := service.remoteip[0]
+	ln := len(service.weight)
+	if ln > 1 {
+		r := rand.Int() % service.weight[ln-1]
+		for i := 0; i < ln; i++ {
+			if r < service.weight[i] {
+				rip = service.remoteip[i]
+				break
+			}
+		}
+	}
+	sess.UserData = service.remote.NewConnect(rip, sess)
+}
 func (service *ServiceProxyS) SessionClose(sess *Session) {
 	if sess.UserData != nil {
 		sess.UserData.(*Connect).Close()
@@ -178,20 +192,6 @@ func (service *ServiceProxyS) HandleError(current *CurrentContent, err error) {
 	current.Sess.Close()
 }
 func (service *ServiceProxyS) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	if sess.UserData == nil {
-		rip := service.remoteip[0]
-		ln := len(service.weight)
-		if ln > 1 {
-			r := rand.Int() % service.weight[ln-1]
-			for i := 0; i < ln; i++ {
-				if r < service.weight[i] {
-					rip = service.remoteip[i]
-					break
-				}
-			}
-		}
-		sess.UserData = service.remote.NewConnect(rip, sess)
-	}
 	sess.UserData.(*Connect).Send(data)
 	return len(data), -1, nil, nil
 }
@@ -211,7 +211,7 @@ func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint6
 	return int(current.Sess.GetID())
 }
 
-//ServiceJson
+// ServiceJson
 type ServiceJson struct {
 	ServiceBase
 	imp JsonService
