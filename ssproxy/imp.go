@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/gotask/gost/stencode"
 	"github.com/gotask/gost/stnet"
 )
 
@@ -84,7 +83,7 @@ func SendRawGpb(sess *stnet.Session, cmdid, cmdseq uint64, msg []byte) error {
 	r.CmdSeq = cmdseq
 	r.CmdData = msg
 
-	buf, e := stencode.Marshal(&r)
+	buf, e := stnet.Marshal(&r, 0)
 	if e != nil {
 		return e
 	}
@@ -142,7 +141,7 @@ func (service *ServiceProxyLLGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 		return 0, 0, nil, nil
 	}
 	m := &ProtocolMessage{}
-	e := stencode.Unmarshal(data[4:msgLen], m)
+	e := stnet.Unmarshal(data[4:msgLen], m, 0)
 	if e != nil {
 		return len(data), 0, nil, e
 	}
@@ -156,6 +155,8 @@ func (service *ServiceProxyLLGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 		} else {
 			s.Send(m.CmdData, nil)
 		}
+	} else {
+		SendRawGpb(sess, m.CmdId, magicNumber, nil)
 	}
 	return int(msgLen), -1, nil, nil
 }
@@ -182,7 +183,6 @@ func (service *ServiceProxyCCRaw) HandleError(current *stnet.CurrentContent, err
 
 func (service *ServiceProxyCCRaw) Unmarshal(sess *stnet.Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	if sess.UserData != nil {
-		service.proxy.sessid.Delete(sess.UserData.(uint64))
 		service.gpb.IterateConnect(func(c *stnet.Connect) bool {
 			SendRawGpb(c.Session(), sess.UserData.(uint64), magicNumber, data)
 			return false
@@ -221,7 +221,7 @@ func (service *ServiceProxyCCGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 		return 0, 0, nil, nil
 	}
 	m := &ProtocolMessage{}
-	e := stencode.Unmarshal(data[4:msgLen], m)
+	e := stnet.Unmarshal(data[4:msgLen], m, 0)
 	if e != nil {
 		return len(data), 0, nil, e
 	}
