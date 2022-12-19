@@ -16,7 +16,7 @@ func Init() error {
 	if e != nil {
 		return e
 	}
-	proxy = stnet.NewServer("proxy", 10, 64)
+	proxy = stnet.NewServer(10, 64)
 	e = AddLCProxy(proxy, listenConnect)
 	if e != nil {
 		return e
