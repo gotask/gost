@@ -50,7 +50,14 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 	for i := 0; i < svr.ProcessorThreadsNum; i++ {
 		msgTh[i] = make(chan sessionMessage, 10240)
 	}
-	sve := &Service{nil, name, imp, msgTh, make(map[uint64]*Connect, 0), sync.Mutex{}, netSignal, threadId, svr}
+	sve := &Service{
+		Name:      name,
+		imp:       imp,
+		messageQ:  msgTh,
+		netSignal: netSignal,
+		threadId:  threadId,
+		svr:       svr,
+	}
 
 	if address != "" {
 		var (
@@ -73,9 +80,9 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 }
 
 // AddService must be called before server started.
-//address could be null,then you get a service without listen.
-//when heartbeat(second)=0,heartbeat will be close.
-//call service.NewConnect start a connector
+// address could be null,then you get a service without listen.
+// when heartbeat(second)=0,heartbeat will be close.
+// call service.NewConnect start a connector
 func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
 	threadId = threadId % svr.ProcessorThreadsNum
 	s, e := svr.newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
