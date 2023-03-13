@@ -3,10 +3,8 @@ package main
 
 import (
 	"fmt"
-	"math/rand"
-	"sync"
-
 	"github.com/gotask/gost/stnet"
+	"math/rand"
 )
 
 var (
@@ -36,13 +34,13 @@ func AddLLProxy(svr *stnet.Server, ll map[string]proxyWeight) error {
 			return fmt.Errorf("error proxy param: %s", k)
 		}
 		llr := &ServiceProxyLLRaw{}
-		raw, e := svr.AddService("", k, 0, llr, threadIndex())
+		raw, e := svr.AddService("", k, 5, llr, threadIndex())
 		if e != nil {
 			return e
 		}
 
 		llg := &ServiceProxyLLGpb{}
-		gpb, e := svr.AddService("", v.address[0], 0, llg, threadIndex())
+		gpb, e := svr.AddService("", v.address[0], 10, llg, threadIndex())
 		if e != nil {
 			return e
 		}
@@ -174,6 +172,9 @@ func (service *ServiceProxyCCRaw) SessionClose(sess *stnet.Session) {
 			return false
 		})
 	}
+	if sess.Connector() != nil {
+		sess.Connector().Close()
+	}
 }
 
 func (service *ServiceProxyCCRaw) HandleError(current *stnet.CurrentContent, err error) {
@@ -197,11 +198,19 @@ func (service *ServiceProxyCCRaw) HashProcessor(current *stnet.CurrentContent, m
 
 type ServiceProxyCCGpb struct {
 	stnet.ServiceBase
-	raw    *stnet.Service
-	sessid sync.Map
+	raw *stnet.Service
 
 	remoteip []string
 	weight   []int
+}
+
+func (service *ServiceProxyCCGpb) SessionClose(sess *stnet.Session) {
+	if sess.UserData != nil {
+		service.raw.IterateConnect(func(c *stnet.Connect) bool {
+			c.Close()
+			return true
+		})
+	}
 }
 
 func (service *ServiceProxyCCGpb) HandleError(current *stnet.CurrentContent, err error) {
@@ -229,14 +238,9 @@ func (service *ServiceProxyCCGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 		return len(data), 0, nil, fmt.Errorf("invalid magicnumber: %d", m.CmdSeq)
 	}
 
-	var co *stnet.Connect
-	c, ok := service.sessid.Load(m.CmdId)
-	if ok {
-		co = c.(*stnet.Connect)
-	}
+	co := service.raw.GetConnect(m.CmdId)
 	if co != nil {
 		if len(m.CmdData) == 0 {
-			service.sessid.Delete(m.CmdId)
 			co.Close()
 		} else {
 			co.Send(m.CmdData)
@@ -254,7 +258,6 @@ func (service *ServiceProxyCCGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 			}
 		}
 		c := service.raw.NewConnect(rip, m.CmdId)
-		service.sessid.Store(m.CmdId, c)
 		c.Send(m.CmdData)
 	}
 	return int(msgLen), -1, nil, nil

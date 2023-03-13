@@ -10,14 +10,14 @@ import (
 
 type Service struct {
 	*Listener
-	Name         string
-	imp          ServiceImp
-	messageQ     []chan sessionMessage
-	connects     map[uint64]*Connect
-	connectMutex sync.Mutex
-	netSignal    *[]chan int
-	threadId     int
-	svr          *Server
+	Name     string
+	imp      ServiceImp
+	messageQ []chan sessionMessage
+	connects sync.Map //map[uint64]*Connect
+	//connectMutex sync.Mutex
+	netSignal *[]chan int
+	threadId  int
+	svr       *Server
 }
 
 func parseAddress(address string) (network string, ipport string) {
@@ -93,11 +93,10 @@ func (service *Service) destroy() {
 	if service.Listener != nil {
 		service.Listener.Close()
 	}
-	service.connectMutex.Lock()
-	for _, v := range service.connects {
-		v.destroy()
-	}
-	service.connectMutex.Unlock()
+	service.connects.Range(func(k, v interface{}) bool {
+		v.(*Connect).destroy()
+		return true
+	})
 	for i := 0; i < service.svr.ProcessorThreadsNum; i++ {
 		select {
 		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil, nil}:
@@ -182,32 +181,22 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 }
 
 func (service *Service) IterateConnect(callback func(*Connect) bool) {
-	service.connectMutex.Lock()
-	defer service.connectMutex.Unlock()
-
-	for _, c := range service.connects {
-		if !callback(c) {
-			break
-		}
-	}
+	service.connects.Range(func(k, v interface{}) bool {
+		return callback(v.(*Connect))
+	})
 }
 
 func (service *Service) GetConnect(id uint64) *Connect {
-	service.connectMutex.Lock()
-	defer service.connectMutex.Unlock()
-
-	v, ok := service.connects[id]
+	v, ok := service.connects.Load(id)
 	if ok {
-		return v
+		return v.(*Connect)
 	}
 	return nil
 }
 
 func (service *Service) NewConnect(address string, userdata interface{}) *Connect {
 	conn := &Connect{NewConnector(address, service, userdata), service}
-	service.connectMutex.Lock()
-	service.connects[conn.GetID()] = conn
-	service.connectMutex.Unlock()
+	service.connects.Store(conn.GetID(), conn)
 	return conn
 }
 
@@ -222,9 +211,7 @@ func (ct *Connect) Imp() ServiceImp {
 
 func (ct *Connect) Close() {
 	go ct.destroy()
-	ct.Master.connectMutex.Lock()
-	delete(ct.Master.connects, ct.GetID())
-	ct.Master.connectMutex.Unlock()
+	ct.Master.connects.Delete(ct.GetID())
 }
 func (ct *Connect) destroy() {
 	ct.Connector.Close()
