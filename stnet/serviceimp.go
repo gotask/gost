@@ -9,11 +9,15 @@ type ServiceImp interface {
 	Init() bool
 	Loop()
 	Destroy()
+
+	//in hash thread by HashProcessor
 	HandleMessage(current *CurrentContent, msgID uint64, msg interface{})
+	//in main thread of service
 	HandleError(*CurrentContent, error)
-	SessionOpen(sess *Session)
 	SessionClose(sess *Session)
 	HeartBeatTimeOut(sess *Session)
+	//in random thread
+	SessionOpen(sess *Session)
 
 	// Unmarshal protocol parsed
 	//lenParsed is the length read from 'data'.

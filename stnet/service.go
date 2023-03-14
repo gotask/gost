@@ -40,6 +40,25 @@ func (service *Service) handlePanic() {
 	}
 }
 
+func (service *Service) handleMsg(current *CurrentContent, msg sessionMessage) {
+	current.Sess = msg.Sess
+	current.Peer = msg.peer
+	if msg.Err != nil {
+		service.imp.HandleError(current, msg.Err)
+	} else if msg.DtType == Open {
+		service.imp.SessionOpen(msg.Sess)
+	} else if msg.DtType == Close {
+		service.imp.SessionClose(msg.Sess)
+	} else if msg.DtType == HeartBeat {
+		service.imp.HeartBeatTimeOut(msg.Sess)
+	} else if msg.DtType == Data {
+		service.imp.HandleMessage(current, uint64(msg.MsgID), msg.Msg)
+	} else if msg.DtType == System {
+	} else {
+		SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
+	}
+}
+
 func (service *Service) messageThread(current *CurrentContent) int {
 	defer service.handlePanic()
 
@@ -47,22 +66,7 @@ func (service *Service) messageThread(current *CurrentContent) int {
 	for i := 0; i < 1024; i++ {
 		select {
 		case msg := <-service.messageQ[current.GoroutineID]:
-			current.Sess = msg.Sess
-			current.Peer = msg.peer
-			if msg.Err != nil {
-				service.imp.HandleError(current, msg.Err)
-			} else if msg.DtType == Open {
-				service.imp.SessionOpen(msg.Sess)
-			} else if msg.DtType == Close {
-				service.imp.SessionClose(msg.Sess)
-			} else if msg.DtType == HeartBeat {
-				service.imp.HeartBeatTimeOut(msg.Sess)
-			} else if msg.DtType == Data {
-				service.imp.HandleMessage(current, uint64(msg.MsgID), msg.Msg)
-			} else if msg.DtType == System {
-			} else {
-				SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
-			}
+			service.handleMsg(current, msg)
 			n++
 		default:
 			return n
@@ -164,6 +168,9 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	th := service.threadId
 	if cmd == Data {
 		th = service.getProcessor(sess, 0, nil)
+	} else if cmd == Open {
+		service.handleMsg(&CurrentContent{}, sessionMessage{sess, cmd, 0, nil, nil, sess.peer})
+		return
 	}
 
 	to := time.NewTimer(100 * time.Millisecond)
