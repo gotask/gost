@@ -35,13 +35,13 @@ func AddLLProxy(svr *stnet.Server, ll map[string]proxyWeight) error {
 			return fmt.Errorf("error proxy param: %s", k)
 		}
 		llr := &ServiceProxyLLRaw{}
-		raw, e := svr.AddService("", k, 5, llr, threadIndex())
+		raw, e := svr.AddService("", k, 20, llr, threadIndex())
 		if e != nil {
 			return e
 		}
 
 		llg := &ServiceProxyLLGpb{}
-		gpb, e := svr.AddService("", v.address[0], 10, llg, threadIndex())
+		gpb, e := svr.AddService("", v.address[0], 60, llg, threadIndex())
 		if e != nil {
 			return e
 		}
