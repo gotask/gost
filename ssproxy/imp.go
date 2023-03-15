@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gotask/gost/stnet"
 	"math/rand"
+	"sync"
 )
 
 var (
@@ -173,6 +174,7 @@ func (service *ServiceProxyCCRaw) SessionClose(sess *stnet.Session) {
 		})
 	}
 	if sess.Connector() != nil {
+		service.gpb.Imp().(*ServiceProxyCCGpb).SessId.Delete(sess.UserData.(uint64))
 		sess.Connector().Close()
 	}
 }
@@ -198,7 +200,8 @@ func (service *ServiceProxyCCRaw) HashProcessor(current *stnet.CurrentContent, m
 
 type ServiceProxyCCGpb struct {
 	stnet.ServiceBase
-	raw *stnet.Service
+	raw    *stnet.Service
+	SessId sync.Map
 
 	remoteip []string
 	weight   []int
@@ -207,6 +210,7 @@ type ServiceProxyCCGpb struct {
 func (service *ServiceProxyCCGpb) SessionClose(sess *stnet.Session) {
 	if sess.UserData != nil {
 		service.raw.IterateConnect(func(c *stnet.Connect) bool {
+			service.SessId.Delete(c.Session().UserData.(uint64))
 			c.Close()
 			return true
 		})
@@ -238,9 +242,14 @@ func (service *ServiceProxyCCGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 		return len(data), 0, nil, fmt.Errorf("invalid magicnumber: %d", m.CmdSeq)
 	}
 
-	co := service.raw.GetConnect(m.CmdId)
+	var co *stnet.Connect
+	c, ok := service.SessId.Load(m.CmdId)
+	if ok {
+		co = c.(*stnet.Connect)
+	}
 	if co != nil {
 		if len(m.CmdData) == 0 {
+			service.SessId.Delete(m.CmdId)
 			co.Close()
 		} else {
 			co.Send(m.CmdData)
@@ -258,6 +267,7 @@ func (service *ServiceProxyCCGpb) Unmarshal(sess *stnet.Session, data []byte) (l
 			}
 		}
 		c := service.raw.NewConnect(rip, m.CmdId)
+		service.SessId.Store(m.CmdId, c)
 		c.Send(m.CmdData)
 	}
 	return int(msgLen), -1, nil, nil
