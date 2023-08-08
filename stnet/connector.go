@@ -77,6 +77,7 @@ func (c *Connector) connect() {
 
 		//maybe already be closed
 		if c.IsClose() {
+			cn.Close()
 			break
 		}
 		c.closeLock.Lock()
