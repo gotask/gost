@@ -13,6 +13,7 @@ type Connector struct {
 	reconnectMSec   int //Millisecond
 	reconnCount     int
 	closer          chan int
+	closeLock       sync.Mutex
 	sessCloseSignal chan int
 	reconnSignal    chan int
 	wg              *sync.WaitGroup
@@ -68,7 +69,7 @@ func (c *Connector) connect() {
 		if err != nil {
 			c.sess.parser.sessionEvent(c.sess, Close)
 			SysLog.Error("connect failed;addr=%s;error=%s", c.address, err.Error())
-			if c.reconnectMSec < 0 || c.IsClose() {
+			if c.reconnectMSec <= 0 || c.IsClose() {
 				break
 			}
 			continue
@@ -78,10 +79,18 @@ func (c *Connector) connect() {
 		if c.IsClose() {
 			break
 		}
+		c.closeLock.Lock()
+		if c.IsClose() {
+			cn.Close()
+			c.closeLock.Unlock()
+			break
+		}
 		c.sess.restart(cn)
+		c.closeLock.Unlock()
+
 		c.reconnCount = 0
 		<-c.sessCloseSignal
-		if c.reconnectMSec < 0 || c.IsClose() {
+		if c.reconnectMSec <= 0 || c.IsClose() {
 			break
 		}
 	}
@@ -112,8 +121,12 @@ func (c *Connector) Close() {
 	if c.IsClose() {
 		return
 	}
+
+	c.closeLock.Lock()
 	close(c.closer)
 	c.sess.Close()
+	c.closeLock.Unlock()
+
 	c.wg.Wait()
 	SysLog.System("connection close, remote addr: %s", c.address)
 }
