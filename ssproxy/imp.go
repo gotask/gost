@@ -168,13 +168,13 @@ type ServiceProxyCCRaw struct {
 
 func (service *ServiceProxyCCRaw) SessionClose(sess *stnet.Session) {
 	if sess.UserData != nil {
+		service.gpb.Imp().(*ServiceProxyCCGpb).SessId.Delete(sess.UserData.(uint64))
 		service.gpb.IterateConnect(func(c *stnet.Connect) bool {
 			SendRawGpb(c.Session(), sess.UserData.(uint64), magicNumber, nil)
 			return false
 		})
 	}
 	if sess.Connector() != nil {
-		service.gpb.Imp().(*ServiceProxyCCGpb).SessId.Delete(sess.UserData.(uint64))
 		sess.Connector().Close()
 	}
 }
@@ -208,13 +208,11 @@ type ServiceProxyCCGpb struct {
 }
 
 func (service *ServiceProxyCCGpb) SessionClose(sess *stnet.Session) {
-	if sess.UserData != nil {
-		service.raw.IterateConnect(func(c *stnet.Connect) bool {
-			service.SessId.Delete(c.Session().UserData.(uint64))
-			c.Close()
-			return true
-		})
-	}
+	service.raw.IterateConnect(func(c *stnet.Connect) bool {
+		service.SessId.Delete(c.Session().UserData.(uint64))
+		c.Close()
+		return true
+	})
 }
 
 func (service *ServiceProxyCCGpb) HandleError(current *stnet.CurrentContent, err error) {
