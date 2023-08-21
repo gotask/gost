@@ -19,7 +19,7 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-// NewConnector reconnect at 0s 1s 4s 9s 16s...;when call send changeAddr NotifyReconn, reconnect at once
+// NewConnector reconnect at 0 1 4 9 16...times reconnectMSec;when call send changeAddr NotifyReconn, reconnect at once
 func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
@@ -64,6 +64,9 @@ func (c *Connector) connect() {
 			}
 		}
 		c.reconnCount++
+		if c.reconnCount > 30 { //max 900 times
+			c.reconnCount = 10
+		}
 
 		cn, err := net.Dial(c.network, c.address)
 		if err != nil {
