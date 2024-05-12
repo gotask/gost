@@ -1,6 +1,7 @@
 package stnet
 
 import (
+	"fmt"
 	"net"
 	"runtime"
 	"strings"
@@ -24,19 +25,19 @@ func parseAddress(address string) (network string, ipport string) {
 	network = "tcp"
 	ipport = address
 	ipport = strings.Replace(ipport, " ", "", -1)
-	if strings.Contains(address, "udp") {
+	if strings.Contains(address, "udp:") {
 		network = "udp"
-		ipport = strings.Replace(ipport, "udp", "", -1)
+		ipport = strings.Replace(ipport, "udp:", "", -1)
 	}
 	return network, ipport
 }
 
 func (service *Service) handlePanic() {
 	if err := recover(); err != nil {
-		SysLog.Critical("panic error: %v", err)
+		sysLog.Critical("panic error: %v", err)
 		buf := make([]byte, 16384)
 		buf = buf[:runtime.Stack(buf, true)]
-		SysLog.Critical("panic stack: %s", string(buf))
+		sysLog.Critical("panic stack: %s", string(buf))
 	}
 }
 
@@ -55,7 +56,7 @@ func (service *Service) handleMsg(current *CurrentContent, msg sessionMessage) {
 		service.imp.HandleMessage(current, uint64(msg.MsgID), msg.Msg)
 	} else if msg.DtType == System {
 	} else {
-		SysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
+		sysLog.Error("message type not find;service=%s;msgtype=%d", service.Name, msg.DtType)
 	}
 }
 
@@ -109,7 +110,6 @@ func (service *Service) destroy() {
 	}
 }
 
-/*
 func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{}) error {
 	th := service.getProcessor(sess, msgid, msg)
 	m := sessionMessage{sess, Data, msgid, msg, nil, nil}
@@ -128,17 +128,23 @@ func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{})
 	default:
 	}
 	return nil
-}*/
+}
 
 func (service *Service) getProcessor(sess *Session, msgid int64, msg interface{}) int {
-	th := service.imp.HashProcessor(&CurrentContent{0, sess, sess.UserData, sess.peer}, uint64(msgid), msg)
+	cur := &CurrentContent{}
+	if sess != nil {
+		cur = &CurrentContent{0, sess, sess.UserData, sess.peer}
+	}
+	th := service.imp.HashProcessor(cur, uint64(msgid), msg)
 	if th > 0 {
 		th = th % service.svr.ProcessorThreadsNum
 	} else if th == 0 {
 		th = service.threadId
-	} else {
+	} else if sess != nil {
 		t := sess.GetID() % uint64(service.svr.ProcessorThreadsNum)
 		th = int(t)
+	} else { //session is nil
+		th = service.threadId
 	}
 
 	return th
@@ -153,7 +159,7 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	select {
 	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e, sess.peer}:
 	default:
-		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
+		sysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
 
 	//wakeup logic thread
@@ -169,7 +175,7 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	if cmd == Data {
 		th = service.getProcessor(sess, 0, nil)
 	} else if cmd == Open {
-		service.handleMsg(&CurrentContent{}, sessionMessage{sess, cmd, 0, nil, nil, sess.peer})
+		service.handleMsg(&CurrentContent{th, sess, nil, nil}, sessionMessage{sess, cmd, 0, nil, nil, sess.peer})
 		return
 	}
 
@@ -182,7 +188,7 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 		default:
 		}
 	case <-to.C:
-		SysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
+		sysLog.Error("service recv queue is full and the message is droped;service=%s;msgtype=%d", service.Name, cmd)
 	}
 	to.Stop()
 }
@@ -201,6 +207,7 @@ func (service *Service) GetConnect(id uint64) *Connect {
 	return nil
 }
 
+// NewConnect reconnect at 0 1 4 9 16...times reconnectMSec(100ms);when call send or changeAddr, it will NotifyReconn and reconnect at once;when call Close, reconnect will stop
 func (service *Service) NewConnect(address string, userdata interface{}) *Connect {
 	conn := &Connect{NewConnector(address, service, userdata), service}
 	service.connects.Store(conn.GetID(), conn)

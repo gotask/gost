@@ -19,7 +19,7 @@ type Connector struct {
 	wg              *sync.WaitGroup
 }
 
-// NewConnector reconnect at 0 1 4 9 16...times reconnectMSec;when call send changeAddr NotifyReconn, reconnect at once
+// NewConnector reconnect at 0 1 4 9 16...times reconnectMSec(100ms);when call send or changeAddr, it will NotifyReconn and reconnect at once;when call Close, reconnect will stop
 func NewConnector(address string, msgparse MsgParse, userdata interface{}) *Connector {
 	if msgparse == nil {
 		panic(ErrMsgParseNil)
@@ -71,7 +71,7 @@ func (c *Connector) connect() {
 		cn, err := net.Dial(c.network, c.address)
 		if err != nil {
 			c.sess.parser.sessionEvent(c.sess, Close)
-			SysLog.Error("connect failed;addr=%s;error=%s", c.address, err.Error())
+			sysLog.Error("connect failed;addr=%s;error=%s", c.address, err.Error())
 			if c.reconnectMSec <= 0 || c.IsClose() {
 				break
 			}
@@ -132,7 +132,7 @@ func (c *Connector) Close() {
 	c.closeLock.Unlock()
 
 	c.wg.Wait()
-	SysLog.System("connection close, remote addr: %s", c.address)
+	sysLog.System("connection close, remote addr: %s", c.address)
 }
 
 func (c *Connector) IsClose() bool {

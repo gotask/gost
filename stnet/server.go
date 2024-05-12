@@ -20,6 +20,7 @@ type Server struct {
 	ProcessorThreadsNum int //number of threads in server.
 }
 
+// NewServer threadnum is the number of the server's running thread.
 func NewServer(loopmsec uint32, threadnum int) *Server {
 	if threadnum <= 0 {
 		threadnum = 1
@@ -80,10 +81,14 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 }
 
 // AddService must be called before server started.
-// address could be null,then you get a service without listen.
+// address could be null,then you get a service without listen; address could be udp,example udp:127.0.0.1:6060,default use tcp(127.0.0.1:6060)
 // when heartbeat(second)=0,heartbeat will be close.
-// call service.NewConnect start a connector
+// threadId should be between 1-ProcessorThreadsNum.
+// call Service.NewConnect start a connector
 func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
+	if threadId < 0 || threadId > svr.ProcessorThreadsNum {
+		return nil, fmt.Errorf("threadId should be 1-%s", svr.ProcessorThreadsNum)
+	}
 	threadId = threadId % svr.ProcessorThreadsNum
 	s, e := svr.newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
 	if e != nil {
@@ -104,8 +109,14 @@ func (svr *Server) AddEchoService(name, address string, heartbeat uint32, thread
 	return svr.AddService(name, address, heartbeat, &ServiceEcho{}, threadId)
 }
 
-func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp}, threadId)
+// AddHttpService rsp: HttpHandler
+func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, h *HttpHandler, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp, h}, threadId)
+}
+
+// AddSpbService imp: NewServiceSpb, use SendSpbCmd to send message, RegisterMsg to register msg.
+func (svr *Server) AddSpbService(name, address string, heartbeat uint32, imp *ServiceSpb, threadId int) (*Service, error) {
+	return svr.AddService(name, address, heartbeat, imp, threadId)
 }
 
 // AddJsonService use SendJsonCmd to send message
@@ -143,22 +154,28 @@ func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId
 	return e
 }
 
-/*
-func (svr *Server) PushRequest(servicename string, msgid int64, msg interface{}) error {
+// PushRequest push message into handle thread;id of thread is the result of ServiceImp.HashProcessor
+func (svr *Server) PushRequest(servicename string, sess *Session, msgid int64, msg interface{}) error {
 	if servicename == "" {
 		return fmt.Errorf("servicename is null")
 	}
 	if s, ok := svr.nameServices[servicename]; ok {
-		return s.PushRequest(msgid, msg)
+		return s.PushRequest(sess, msgid, msg)
 	}
 	return fmt.Errorf("no service named %s", servicename)
-}*/
+}
+
+// SetLogLvl open or close system log.
+func (svr *Server) SetLogLvl(lvl Level) {
+	sysLog.SetLevel(lvl)
+	sysLog.SetTermLevel(CLOSE)
+}
 
 type CurrentContent struct {
-	GoroutineID int
+	GoroutineID int //thead id
 	Sess        *Session
 	UserDefined interface{}
-	Peer        net.Addr
+	Peer        net.Addr //use in udp
 }
 
 func (svr *Server) Start() error {
@@ -205,7 +222,7 @@ func (svr *Server) Start() error {
 					to.Stop()
 				}
 			}
-			SysLog.System("%d thread quit.", threadIdx)
+			sysLog.System("%d thread quit.", threadIdx)
 			svr.wg.Done()
 		}(k, v, allServices)
 	}
@@ -227,11 +244,11 @@ func (svr *Server) Start() error {
 					<-svr.netSignal[idx]
 				}
 			}
-			SysLog.System("%d thread quit.", idx)
+			sysLog.System("%d thread quit.", idx)
 			svr.wg.Done()
 		}(i, allServices)
 	}
-	SysLog.Debug("server start~~~~~~")
+	sysLog.Debug("server start~~~~~~")
 	return nil
 }
 
@@ -242,7 +259,7 @@ func (svr *Server) Stop() {
 			s.destroy()
 		}
 	}
-	SysLog.System("network stop~~~~~~")
+	sysLog.System("network stop~~~~~~")
 
 	//stop logic work
 	svr.isClose.Close()
@@ -254,13 +271,13 @@ func (svr *Server) Stop() {
 		}
 	}
 	svr.wg.Wait()
-	SysLog.System("logic stop~~~~~~")
+	sysLog.System("logic stop~~~~~~")
 
 	for _, v := range svr.services {
 		for _, s := range v {
 			s.imp.Destroy()
 		}
 	}
-	SysLog.Debug("server closed~~~~~~")
+	sysLog.Debug("server closed~~~~~~")
 	logClose()
 }

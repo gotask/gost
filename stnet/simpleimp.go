@@ -1,15 +1,9 @@
 package stnet
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
-	"net/textproto"
-	"strconv"
-	"strings"
+	"reflect"
 )
 
 // ServiceImpBase
@@ -38,12 +32,16 @@ func (service *ServiceBase) HeartBeatTimeOut(sess *Session) {
 	sess.Close()
 }
 func (service *ServiceBase) HandleError(current *CurrentContent, err error) {
-	SysLog.Error(err.Error())
+	sysLog.Error(err.Error())
 	current.Sess.Close()
 }
 func (service *ServiceBase) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
 	return len(data), -1, nil, nil
 }
+
+// processorID is the thread who process this msg;it should between 1-ProcessorThreadsNum.
+// if processorID == 0, it only uses main thread of the service.
+// if processorID < 0, it will use hash of session id.
 func (service *ServiceBase) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return -1
 }
@@ -60,90 +58,6 @@ func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int
 
 func (service *ServiceEcho) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return int(current.Sess.GetID())
-}
-
-// ServiceHttp
-type ServiceHttp struct {
-	ServiceBase
-	imp HttpService
-}
-
-func (service *ServiceHttp) Init() bool {
-	return service.imp.Init()
-}
-
-func (service *ServiceHttp) Loop() {
-	service.imp.Loop()
-}
-
-func (service *ServiceHttp) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
-	req := msg.(*http.Request)
-	service.imp.Handle(current, req, nil)
-}
-func (service *ServiceHttp) HandleError(current *CurrentContent, err error) {
-	service.imp.Handle(current, nil, err)
-}
-func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	nIndex := bytes.Index(data, []byte{'\r', '\n', '\r', '\n'})
-	if nIndex <= 0 {
-		return 0, 0, nil, nil
-	}
-	dataLen := nIndex + 4
-	tp := textproto.NewReader(bufio.NewReader(bytes.NewReader(data[0:dataLen])))
-
-	var line string
-	if line, err = tp.ReadLine(); err != nil {
-		return len(data), 0, nil, err
-	}
-	//"GET /foo HTTP/1.1"
-	ss := strings.Split(line, " ")
-	if len(ss) != 3 {
-		return len(data), 0, nil, fmt.Errorf("not http")
-	}
-	if ss[2] != "HTTP/1.1" {
-		return len(data), 0, nil, fmt.Errorf("not http/1.1 method:%s requestURI:%s requestURI:%s", ss[0], ss[1], ss[2])
-	}
-
-	mimeHeader, err := tp.ReadMIMEHeader()
-	if err != nil {
-		return len(data), 0, nil, err
-	}
-
-	cl := mimeHeader.Get("Content-Length")
-	cl = textproto.TrimString(cl)
-	if len(cl) > 0 { //fixed length
-		n, err := strconv.ParseUint(cl, 10, 63)
-		if err != nil {
-			return len(data), 0, nil, fmt.Errorf("bad Content-Length %d", cl)
-		}
-		dataLen += int(n)
-		if len(data) < dataLen {
-			return 0, 0, nil, nil
-		}
-	} else {
-		te := mimeHeader.Get("Transfer-Encoding")
-		te = textproto.TrimString(te)
-		if te == "chunked" {
-			i := bytes.Index(data, []byte{'\r', '\n', '0', '\r', '\n'})
-			if i <= 0 {
-				return 0, 0, nil, nil
-			}
-			dataLen = i + 5
-		}
-	}
-
-	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(data[0:dataLen])))
-	if err != nil {
-		return dataLen, 0, nil, err
-	}
-	return dataLen, 0, req, nil
-}
-func (service *ServiceHttp) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	var req *http.Request
-	if msg != nil {
-		req = msg.(*http.Request)
-	}
-	return service.imp.HashProcessor(current, req)
 }
 
 type ServiceLoop struct {
@@ -211,6 +125,96 @@ func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint6
 	return int(current.Sess.GetID())
 }
 
+// ServiceSpb
+type ServiceSpb struct {
+	ServiceBase
+	imp    SpbService
+	msgReg map[uint64]reflect.Type
+}
+
+func NewServiceSpb(imp SpbService) *ServiceSpb {
+	return &ServiceSpb{ServiceBase{}, imp, make(map[uint64]reflect.Type)}
+}
+
+func (service *ServiceSpb) RegisterMsg(msgId uint64, msg interface{}) error {
+	t := reflect.TypeOf(msg)
+	if msg == nil || t.Kind() == reflect.Ptr {
+		return fmt.Errorf("type of msg cannot be ptr or nil")
+	}
+	service.msgReg[msgId] = t
+	return nil
+}
+
+func (service *ServiceSpb) Init() bool {
+	return service.imp.Init()
+}
+
+func (service *ServiceSpb) Loop() {
+	service.imp.Loop()
+}
+
+func (service *ServiceSpb) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
+	t, ok := service.msgReg[msgID]
+	if !ok {
+		service.imp.Handle(current, msgID, msg, nil)
+		return
+	}
+
+	var d []byte
+	if msg != nil {
+		d, ok = msg.([]byte)
+		if !ok {
+			service.imp.Handle(current, msgID, msg, fmt.Errorf("msg unmarshal failed id=%d,err=msg not marshaled bytes", msgID))
+			return
+		}
+	}
+	m := reflect.New(t).Interface()
+	e := Unmarshal(d, m, EncodeTyepSpb)
+	if e != nil {
+		service.imp.Handle(current, msgID, nil, fmt.Errorf("msg unmarshal failed id=%d,err=%s", msgID, e.Error()))
+	} else {
+		service.imp.Handle(current, msgID, m, nil)
+	}
+}
+func (service *ServiceSpb) HandleError(current *CurrentContent, err error) {
+	service.imp.Handle(current, 0, nil, err)
+}
+func (service *ServiceSpb) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
+	if len(data) < 4 {
+		return 0, 0, nil, nil
+	}
+	msgLen := MsgLen(data)
+	if msgLen < 4 || msgLen >= uint32(MaxMsgSize) {
+		return len(data), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
+	}
+
+	if len(data) < int(msgLen) {
+		return 0, 0, nil, nil
+	}
+	cmd := JsonProto{}
+	e := Unmarshal(data[4:msgLen], &cmd, EncodeTyepSpb)
+	if e != nil {
+		return int(msgLen), 0, nil, e
+	}
+	return int(msgLen), int64(cmd.CmdId), cmd.CmdData, nil
+}
+func (service *ServiceSpb) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
+	return service.imp.HashProcessor(current, msgID)
+}
+
+func SendSpbCmd(sess *Session, msgID uint64, msg interface{}) error {
+	d, e := Marshal(msg, EncodeTyepSpb)
+	if e != nil {
+		return e
+	}
+	cmd := JsonProto{msgID, d}
+	buf, e := EncodeProtocol(cmd, EncodeTyepSpb)
+	if e != nil {
+		return e
+	}
+	return sess.Send(buf, nil)
+}
+
 // ServiceJson
 type ServiceJson struct {
 	ServiceBase
@@ -227,8 +231,13 @@ func (service *ServiceJson) Loop() {
 
 func (service *ServiceJson) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
 	var d []byte
+	var ok bool
 	if msg != nil {
-		d = msg.([]byte)
+		d, ok = msg.([]byte)
+		if !ok {
+			service.imp.Handle(current, JsonProto{msgID, nil}, fmt.Errorf("format of msg should be []byte, id=%d", msgID))
+			return
+		}
 	}
 	service.imp.Handle(current, JsonProto{msgID, d}, nil)
 }
@@ -248,7 +257,7 @@ func (service *ServiceJson) Unmarshal(sess *Session, data []byte) (lenParsed int
 		return 0, 0, nil, nil
 	}
 	cmd := JsonProto{}
-	e := json.Unmarshal(data[4:msgLen], &cmd)
+	e := Unmarshal(data[4:msgLen], &cmd, EncodeTyepJson)
 	if e != nil {
 		return int(msgLen), 0, nil, e
 	}

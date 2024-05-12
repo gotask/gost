@@ -44,7 +44,7 @@ func NewListener(address string, msgparse MsgParse, heartbeat uint32) (*Listener
 		for !lis.isclose.IsClose() {
 			conn, err := lis.lst.Accept()
 			if err != nil {
-				SysLog.Error("accept error: %s", err.Error())
+				sysLog.Error("accept error: %s", err.Error())
 				break
 			}
 
@@ -104,7 +104,7 @@ func NewUdpListener(address string, msgparse MsgParse, heartbeat uint32) (*Liste
 			if !lis.isclose.IsClose() {
 				ls, err = net.ListenUDP("udp", addr)
 				if err != nil {
-					SysLog.Error("udp listen failed: %s %s", address, err.Error())
+					sysLog.Error("udp listen failed: %s %s", address, err.Error())
 					time.Sleep(time.Second * 3)
 				} else {
 					lis.udpConn = ls

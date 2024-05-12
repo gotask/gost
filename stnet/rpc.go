@@ -40,7 +40,7 @@ type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
 
-	//todo: req rsp
+	//extra: req rsp
 	//HandleReq(current *CurrentContent, msg *ReqProto)
 	//HandleRsp(current *CurrentContent, msg *RspProto)
 
@@ -83,8 +83,8 @@ func NewServiceRpc(imp RpcService) *ServiceRpc {
 	return svr
 }
 
-//rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
-//exception function: func(int32){}
+// rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
+// rpc_call exception function: func(int32){}
 func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
 	var rpcReq rpcRequest
 	rpcReq.timeout = time.Now().Unix() + TimeOut
@@ -159,7 +159,7 @@ func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, f
 	return nil
 }
 
-//RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil, func(rspCode int32))
+// RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil, func(rspCode int32))
 func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error {
 	return service.rpc_call(false, sess, nil, funcName, params...)
 }
@@ -207,7 +207,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	if !ok {
 		rsp.RspCode = RpcErrNoRemoteFunc
 		service.sendRpcRsp(current, rsp)
-		SysLog.Error("no rpc function: %s", req.FuncName)
+		sysLog.Error("no rpc function: %s", req.FuncName)
 		return
 	}
 
@@ -224,7 +224,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current, rsp)
-			SysLog.Error("function %s param unpack failed: %s", req.FuncName, e.Error())
+			sysLog.Error("function %s param unpack failed: %s", req.FuncName, e.Error())
 			return
 		}
 		if t.Kind() == reflect.Ptr {
@@ -246,7 +246,7 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
 			service.sendRpcRsp(current, rsp)
-			SysLog.Error("function %s param pack failed: %s", req.FuncName, e.Error())
+			sysLog.Error("function %s param pack failed: %s", req.FuncName, e.Error())
 			return
 		}
 	}
@@ -259,7 +259,7 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 	v, ok := service.rpcRequests[rsp.RspCmdSeq]
 	if !ok {
 		service.rpcMutex.Unlock()
-		SysLog.Error("recv rpc rsp but req not found, func: %s", rsp.FuncName)
+		sysLog.Error("recv rpc rsp but req not found, func: %s", rsp.FuncName)
 		return
 	}
 	delete(service.rpcRequests, rsp.RspCmdSeq)
@@ -284,7 +284,7 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 					if v.exception != nil {
 						v.exception(RpcErrFuncParamErr)
 					}
-					SysLog.Error("recv rpc rsp but unpack failed, func:%s,%s", rsp.FuncName, e.Error())
+					sysLog.Error("recv rpc rsp but unpack failed, func:%s,%s", rsp.FuncName, e.Error())
 					return
 				}
 				if t.Kind() == reflect.Ptr {
@@ -310,7 +310,7 @@ func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, 
 	} else if msgID == 3 { //rpc rsp
 		service.handleRpcRsp(msg.(*RspProto))
 	} else {
-		SysLog.Error("invalid msgid %d", msgID)
+		sysLog.Error("invalid msgid %d", msgID)
 	}
 }
 
@@ -372,6 +372,8 @@ func (service *ServiceRpc) HashProcessor(current *CurrentContent, msgID uint64, 
 	return service.imp.HashProcessor(current)
 }
 
+//extra: req rsp
+/*
 func (service *ServiceRpc) SendUdpReq(sess *Session, peer net.Addr, req ReqProto) error {
 	buf, e := encodeProtocol(&req, 0)
 	if e != nil {
@@ -395,7 +397,7 @@ func (service *ServiceRpc) SendReq(sess *Session, req ReqProto) error {
 
 func (service *ServiceRpc) SendRsp(sess *Session, rsp RspProto) error {
 	return service.SendUdpRsp(sess, nil, rsp)
-}
+}*/
 
 func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req ReqProto) error {
 	buf, e := encodeProtocol(&req, 0)

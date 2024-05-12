@@ -1,19 +1,18 @@
 package stnet
 
 import (
-	"github.com/gotask/gost/stlog"
 	"sync/atomic"
 )
 
 var (
-	SysLog *stlog.Logger
+	sysLog *Logger
 	user   int32
 )
 
 func init() {
-	SysLog = stlog.NewLogger()
-	SysLog.SetFileLevel(stlog.SYSTEM, "net_system.log", 1024*1024*1024, 0, 1)
-	SysLog.SetTermLevel(stlog.CLOSE)
+	sysLog = NewLogger()
+	sysLog.SetFileLevel(SYSTEM, "net_system.log", 1024*1024*1024, 0, 1)
+	sysLog.SetTermLevel(CLOSE)
 }
 
 func logOpen() {
@@ -23,6 +22,6 @@ func logOpen() {
 func logClose() {
 	u := atomic.AddInt32(&user, -1)
 	if u <= 0 {
-		SysLog.Close()
+		sysLog.Close()
 	}
 }

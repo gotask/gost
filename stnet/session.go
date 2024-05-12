@@ -2,7 +2,6 @@ package stnet
 
 import (
 	"errors"
-
 	"net"
 	"runtime"
 	"sync"
@@ -21,9 +20,10 @@ const (
 )
 
 var (
-	ErrSocketClosed   = errors.New("socket closed")
-	ErrSocketIsOpen   = errors.New("socket is open")
-	ErrSendOverTime   = errors.New("send message over time")
+	ErrSocketClosed = errors.New("socket closed")
+	ErrSocketIsOpen = errors.New("socket is open")
+	//ErrSendOverTime   = errors.New("send message over time")
+	// length of send(recv) buffer = 256(tcp) 10240(udp) default
 	ErrSendBuffIsFull = errors.New("send buffer is full")
 	ErrMsgParseNil    = errors.New("MsgParse is nil")
 )
@@ -38,24 +38,24 @@ type MsgParse interface {
 	sessionEvent(sess *Session, cmd CMDType)
 }
 
-//this will be called when session open
+// FuncOnOpen will be called when session open
 type FuncOnOpen = func(*Session)
 
-//this will be called when session closed
+// FuncOnClose will be called when session closed
 type FuncOnClose = func(*Session)
 
-//message recv buffer size
+// message recv buffer size
 var (
 	MsgBuffSize = 1024
 	MinMsgSize  = 64
 	MaxMsgSize  = 2 * 1024 * 1024
 
-	//the length of send queue
+	//the length of send(recv) queue
 	WriterListLen = 256
 	RecvListLen   = 256
 )
 
-//session id
+// session id
 var GlobalSessionID uint64
 
 type rsData struct {
@@ -71,8 +71,8 @@ type Session struct {
 	hander    chan rsData
 	closer    chan int
 	wg        *sync.WaitGroup
-	onopen    FuncOnOpen
-	onclose   FuncOnClose
+	onopen    interface{}
+	onclose   interface{}
 	isclose   *Closer
 	heartbeat uint32
 	conn      *Connector
@@ -107,9 +107,9 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 		isUdp:     isudp,
 	}
 	if isudp {
-		SysLog.System("udp session start, local addr: %s", sess.socket.LocalAddr())
+		sysLog.System("udp session start, local addr: %s", sess.socket.LocalAddr())
 	} else {
-		SysLog.System("tcp session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
+		sysLog.System("tcp session start, local addr: %s, remote addr: %s", sess.socket.LocalAddr(), sess.socket.RemoteAddr())
 	}
 	asyncDo(sess.dosend, sess.wg)
 	asyncDo(sess.dohand, sess.wg)
@@ -154,10 +154,10 @@ func (s *Session) Connector() *Connector {
 
 func (s *Session) handlePanic() {
 	if err := recover(); err != nil {
-		SysLog.Critical("panic error: %v", err)
+		sysLog.Critical("panic error: %v", err)
 		buf := make([]byte, 16384)
 		buf = buf[:runtime.Stack(buf, true)]
-		SysLog.Critical("panic stack: %s", string(buf))
+		sysLog.Critical("panic stack: %s", string(buf))
 		//close socket
 		s.socket.Close()
 	}
@@ -176,9 +176,9 @@ func (s *Session) restart(con net.Conn) error {
 	s.hander = make(chan rsData, RecvListLen)
 
 	if s.isUdp {
-		SysLog.System("udp session restart, local addr: %s", s.socket.LocalAddr())
+		sysLog.System("udp session restart, local addr: %s", s.socket.LocalAddr())
 	} else {
-		SysLog.System("tcp session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+		sysLog.System("tcp session restart, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 	}
 
 	asyncDo(s.dosend, s.wg)
@@ -196,17 +196,17 @@ func (s *Session) Peer() net.Addr {
 }
 
 // Send peer is used in udp
-func (s *Session) Send(data []byte, peer net.Addr) error {
+func (s *Session) Send(data []byte, peerUdp net.Addr) error {
 	msg := bp.Alloc(len(data))
 	copy(msg, data)
 
 	select {
 	case <-s.closer:
 		return ErrSocketClosed
-	case s.writer <- rsData{msg, peer}:
+	case s.writer <- rsData{msg, peerUdp}:
 		return nil
 	default:
-		SysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
+		sysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
 		return ErrSendBuffIsFull
 	}
 }
@@ -215,7 +215,7 @@ func (s *Session) Close() {
 	if s.IsClose() {
 		return
 	}
-	SysLog.System("session close, local addr: %s", s.socket.LocalAddr())
+	sysLog.System("session close, local addr: %s", s.socket.LocalAddr())
 	s.socket.Close()
 }
 
@@ -246,7 +246,7 @@ func (s *Session) dosend() {
 				for n < len(buf.data) {
 					n1, err := s.socket.Write(buf.data[n:])
 					if err != nil {
-						SysLog.Error("session sending error: %s;sessionid=%d", err.Error(), s.id)
+						sysLog.Error("session sending error: %s;sessionid=%d", err.Error(), s.id)
 						s.socket.Close()
 						bp.Free(buf.data)
 						return
@@ -271,16 +271,18 @@ func (s *Session) dorecv() {
 		s.wg.Wait()
 		s.isclose.Close()
 		if s.isUdp {
-			SysLog.System("udp session close, local addr: %s", s.socket.LocalAddr())
+			sysLog.System("udp session close, local addr: %s", s.socket.LocalAddr())
 		} else {
-			SysLog.System("tcp session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
+			sysLog.System("tcp session close, local addr: %s, remote addr: %s", s.socket.LocalAddr(), s.socket.RemoteAddr())
 		}
 		s.parser.sessionEvent(s, Close)
-		s.onclose(s)
+		if s.onclose != nil && s.onclose.(FuncOnClose) != nil {
+			s.onclose.(FuncOnClose)(s)
+		}
 	}()
 
-	if s.onopen != nil {
-		s.onopen(s)
+	if s.onopen != nil && s.onopen.(FuncOnOpen) != nil {
+		s.onopen.(FuncOnOpen)(s)
 	}
 	s.parser.sessionEvent(s, Open)
 
@@ -305,7 +307,7 @@ func (s *Session) dorecv() {
 			n, err = s.socket.Read(msgbuf)
 		}
 		if err != nil || n == 0 {
-			SysLog.Error("session recv error: %s,n: %d", err.Error(), n)
+			sysLog.Error("session recv error: %s,n: %d", err.Error(), n)
 			//defer close
 			return
 		}
@@ -381,17 +383,17 @@ func (s *Session) dohand() {
 				goto anthorMsg
 			} else if parseLen == 0 {
 				if s.isUdp {
-					SysLog.Error("udp need read all data once,length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), buf.peer.String())
+					sysLog.Error("udp need read all data once,length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), buf.peer.String())
 					continue
 				}
 				tempBuf = buf.data
 				if len(tempBuf) > MaxMsgSize {
 					s.socket.Close()
-					SysLog.Error("msgbuff too large, length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), s.socket.RemoteAddr())
+					sysLog.Error("msgbuff too large, length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), s.socket.RemoteAddr())
 				}
 			} else {
 				s.socket.Close()
-				SysLog.Error("parseLen < 0, parseLen: %d, local addr: %s", parseLen, s.socket.LocalAddr())
+				sysLog.Error("parseLen < 0, parseLen: %d, local addr: %s", parseLen, s.socket.LocalAddr())
 			}
 		}
 	}
