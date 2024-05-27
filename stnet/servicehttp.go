@@ -69,6 +69,11 @@ func (w *httpWriter) WriteHeader(statusCode int) {
 	}
 
 	w.isWroteHeader = true
+
+	// wrong status code
+	if (w.status >= 100 && w.status <= 199) || w.status == 204 || w.status == 304 {
+		w.Write(nil)
+	}
 }
 
 type HttpService interface {
