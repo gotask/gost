@@ -4,23 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
 
-var (
-	TimeOut int64 = 5 //sec
-)
-
 const (
-	RpcErrNoRemoteFunc = -1
-	RpcErrCallTimeout  = -2
-	RpcErrFuncParamErr = -3
+	RpcErrNoRemoteFunc    = -1
+	RpcErrCallTimeout     = -2
+	RpcErrFuncParamErr    = -3
+	RotErrNoRemoteService = -4
 )
 
 type ReqProto struct {
-	ReqCmdId  uint32
 	ReqCmdSeq uint32
 	ReqData   []byte
 	IsOneWay  bool
@@ -28,23 +26,67 @@ type ReqProto struct {
 }
 
 type RspProto struct {
-	RspCmdId  uint32
 	RspCmdSeq uint32
-	PushSeqId uint32
 	RspCode   int32
 	RspData   []byte
 	FuncName  string
 }
 
+type PushProto struct {
+	SrcName string
+	PushSeq uint32
+	CmdSeq  uint32
+	CmdData []byte
+}
+
 type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
-
-	//extra: req rsp
-	//HandleReq(current *CurrentContent, msg *ReqProto)
-	//HandleRsp(current *CurrentContent, msg *RspProto)
-
+	//HashProcessor if processorID == 0, it only uses main thread of the service.
+	//if processorID < 0, it will use hash of session id.
 	HashProcessor(current *CurrentContent) (processorID int)
+}
+
+type RpcServiceEx interface {
+	Loop()
+	HandleError(current *CurrentContent, err error)
+	//HashProcessor if processorID == 0, it only uses main thread of the service.
+	//if processorID < 0, it will use hash of session id.
+	HashProcessor(current *CurrentContent) (processorID int)
+
+	HandlePush(current *CurrentContent, msg *PushProto)
+}
+
+type SimpRpcService struct {
+	imp RpcService
+}
+
+func (r *SimpRpcService) Loop() {
+	r.imp.Loop()
+}
+func (r *SimpRpcService) HandleError(current *CurrentContent, err error) {
+	r.imp.HandleError(current, err)
+}
+func (r *SimpRpcService) HashProcessor(c *CurrentContent) (processorID int) {
+	return r.imp.HashProcessor(c)
+}
+func (r *SimpRpcService) HandlePush(current *CurrentContent, msg *PushProto) {
+	sysLog.Error("HandlePush is null")
+}
+
+type NullRpcService struct {
+}
+
+func (r *NullRpcService) Loop() {
+}
+func (r *NullRpcService) HandleError(current *CurrentContent, err error) {
+	sysLog.Error("rpc error: %s", err.Error())
+}
+func (r *NullRpcService) HashProcessor(*CurrentContent) (processorID int) {
+	return 0
+}
+func (r *NullRpcService) HandlePush(current *CurrentContent, msg *PushProto) {
+	sysLog.Error("HandlePush is null")
 }
 
 type RpcFuncException func(rspCode int32)
@@ -61,58 +103,88 @@ type rpcRequest struct {
 
 type ServiceRpc struct {
 	ServiceBase
+	base    *Service
 	imp     RpcService
+	impEx   RpcServiceEx
 	methods map[string]reflect.Method
 
 	rpcRequests    map[uint32]*rpcRequest
 	rpcReqSequence uint32
 	rpcMutex       sync.Mutex
+
+	rpcTimeOutMs int64
 }
 
-func NewServiceRpc(imp RpcService) *ServiceRpc {
+func newServiceRpc(imp RpcService, rpcTimeOutMilli int64) *ServiceRpc {
+	return newRpcService(imp, &SimpRpcService{imp}, rpcTimeOutMilli)
+}
+
+func newServiceRpcEx(imp RpcServiceEx, rpcTimeOutMilli int64) *ServiceRpc {
+	return newRpcService(imp, imp, rpcTimeOutMilli)
+}
+
+func newRpcService(imp RpcService, impEx RpcServiceEx, rpcTimeOutMilli int64) *ServiceRpc {
+	if rpcTimeOutMilli <= 10 {
+		rpcTimeOutMilli = 3000 //default 3s
+	}
+
 	svr := &ServiceRpc{}
 	svr.imp = imp
+	svr.impEx = impEx
 	svr.rpcRequests = make(map[uint32]*rpcRequest)
 	svr.methods = make(map[string]reflect.Method)
+	svr.rpcTimeOutMs = rpcTimeOutMilli
 
 	t := reflect.TypeOf(imp)
 	for i := 0; i < t.NumMethod(); i++ {
 		m := t.Method(i)
 		svr.methods[m.Name] = m
 	}
+
+	delete(svr.methods, "Loop")
+	delete(svr.methods, "HandleError")
+	delete(svr.methods, "HashProcessor")
+	delete(svr.methods, "HandlePush")
+
 	return svr
 }
 
 // rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
 // rpc_call exception function: func(int32){}
-func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
+func (service *ServiceRpc) rpc_call(isSync bool, isRouter bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
+	rpcRequestMetricAdd()
+
 	var rpcReq rpcRequest
-	rpcReq.timeout = time.Now().Unix() + TimeOut
+	rpcReq.timeout = time.Now().UnixMilli() + service.rpcTimeOutMs
 	rpcReq.req.FuncName = funcName
 
-	if len(params) < 2 {
-		return errors.New("no callback function or exception function")
-	}
-	if params[len(params)-1] != nil {
-		if ex, ok := params[len(params)-1].(func(int32)); ok {
-			rpcReq.exception = ex
-		} else {
-			return errors.New("invalid exception function")
+	//have callback function and exception function
+	if len(params) > 0 && (params[len(params)-1] == nil || reflect.TypeOf(params[len(params)-1]).Kind() == reflect.Func) {
+		if len(params) < 2 {
+			return errors.New("no callback function or exception function")
 		}
-	}
-	if params[len(params)-2] != nil {
-		param2Type := reflect.TypeOf(params[len(params)-2])
-		if param2Type.Kind() != reflect.Func {
-			return errors.New("invalid callback function")
+		if params[len(params)-1] != nil {
+			if ex, ok := params[len(params)-1].(func(int32)); ok {
+				rpcReq.exception = ex
+			} else {
+				return errors.New("invalid exception function")
+			}
 		}
-	}
-	rpcReq.callback = params[len(params)-2]
+		if params[len(params)-2] != nil {
+			param2Type := reflect.TypeOf(params[len(params)-2])
+			if param2Type.Kind() != reflect.Func {
+				return errors.New("invalid callback function")
+			}
+		}
+		rpcReq.callback = params[len(params)-2]
 
-	params = params[0 : len(params)-2]
+		params = params[0 : len(params)-2]
+	}
+
 	var err error
 	spb := Spb{}
 	for i, v := range params {
-		err = rpcMarshal(&spb, uint32(i+1), v)
+		err = RpcMarshal(&spb, uint32(i+1), v)
 		if err != nil {
 			return fmt.Errorf("wrong params in RpcCall:%s(%d) %s", funcName, i, err.Error())
 		}
@@ -126,32 +198,44 @@ func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, f
 	service.rpcReqSequence++
 	rpcReq.req.ReqCmdSeq = service.rpcReqSequence
 	rpcReq.sess = sess
-	if issync {
+	if isSync {
 		rpcReq.signal = make(chan *RspProto, 1)
 	}
 	service.rpcRequests[rpcReq.req.ReqCmdSeq] = &rpcReq
 	service.rpcMutex.Unlock()
 
-	err = service.sendRpcReq(sess, peer, rpcReq.req)
+	if isRouter {
+		err = service.sendRouterRpcReq(sess, peer, &rpcReq.req)
+	} else {
+		err = service.sendRpcReq(sess, peer, &rpcReq.req)
+	}
 	if err != nil {
 		return err
 	}
 
-	if !issync {
+	if !isSync {
 		return nil
 	}
 
-	to := time.NewTimer(time.Duration(TimeOut) * time.Second)
+	to := time.NewTimer(time.Duration(service.rpcTimeOutMs) * time.Millisecond)
 	select {
 	case rsp := <-rpcReq.signal:
 		service.handleRpcRsp(rsp)
 	case <-to.C:
+		isOk := false
 		service.rpcMutex.Lock()
-		delete(service.rpcRequests, rpcReq.req.ReqCmdSeq)
+		_, isOk = service.rpcRequests[rpcReq.req.ReqCmdSeq]
+		if isOk {
+			delete(service.rpcRequests, rpcReq.req.ReqCmdSeq)
+		}
 		service.rpcMutex.Unlock()
 
-		if rpcReq.exception != nil {
-			rpcReq.exception(RpcErrCallTimeout)
+		if isOk {
+			rpcFailedMetricAdd()
+			rpcOverTimeMetricAdd()
+			if rpcReq.exception != nil {
+				rpcReq.exception(RpcErrCallTimeout)
+			}
 		}
 	}
 	to.Stop()
@@ -159,18 +243,20 @@ func (service *ServiceRpc) rpc_call(issync bool, sess *Session, peer net.Addr, f
 	return nil
 }
 
-// RpcCall remotesession remotefunction(string) functionparams callback(could nil) exception(could nil, func(rspCode int32))
+// RpcCall remoteSess remoteFunc(string) funcParams callback(could nil) exception(could nil, func(rspCode int32))
+// example rpc.RpcCall(c.Session(), "Add", 1, 2, func(result int) {}, func(exception int32) {})
+// example rpc.RpcCall(c.Session(), "Ping")
 func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error {
-	return service.rpc_call(false, sess, nil, funcName, params...)
+	return service.rpc_call(false, false, sess, nil, funcName, params...)
 }
 func (service *ServiceRpc) RpcCall_Sync(sess *Session, funcName string, params ...interface{}) error {
-	return service.rpc_call(true, sess, nil, funcName, params...)
+	return service.rpc_call(true, false, sess, nil, funcName, params...)
 }
 func (service *ServiceRpc) UdpRpcCall(sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
-	return service.rpc_call(false, sess, peer, funcName, params...)
+	return service.rpc_call(false, false, sess, peer, funcName, params...)
 }
 func (service *ServiceRpc) UdpRpcCall_Sync(sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
-	return service.rpc_call(true, sess, peer, funcName, params...)
+	return service.rpc_call(true, false, sess, peer, funcName, params...)
 }
 
 func (service *ServiceRpc) Init() bool {
@@ -178,15 +264,17 @@ func (service *ServiceRpc) Init() bool {
 }
 
 func (service *ServiceRpc) Loop() {
-	now := time.Now().Unix()
+	now := time.Now().UnixMilli()
 	timeouts := make([]*rpcRequest, 0)
 	service.rpcMutex.Lock()
 	for k, v := range service.rpcRequests {
 		if v.timeout < now {
-			if v.exception != nil && v.signal != nil {
+			if v.exception != nil && v.signal == nil {
 				timeouts = append(timeouts, v)
 			}
 			delete(service.rpcRequests, k)
+			rpcFailedMetricAdd()
+			rpcOverTimeMetricAdd()
 		}
 	}
 	service.rpcMutex.Unlock()
@@ -198,20 +286,37 @@ func (service *ServiceRpc) Loop() {
 	service.imp.Loop()
 }
 
-func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) {
+func (service *ServiceRpc) handleRouterRpcReq(current *CurrentContent, req *RouterMsgReq) {
+	r := &ReqProto{}
+	e := Unmarshal(req.RawData, r, 0)
+	if e != nil {
+		rpcRemoteReqMetricAdd()
+		rpcInvalidReqMetricAdd()
+
+		sysLog.Error("%s->%s RouterMsgReq.RawData unmarshal failed: %s", req.SrcAddr, req.DstService, e.Error())
+		return
+	}
+
+	rsp := service.handleRpcReq(current, r)
+	sendRouterRsp(current, req, rsp, 0x7)
+}
+
+func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) *RspProto {
+	rpcRemoteReqMetricAdd()
+
 	var rsp RspProto
 	rsp.RspCmdSeq = req.ReqCmdSeq
 	rsp.FuncName = req.FuncName
 
 	m, ok := service.methods[req.FuncName]
 	if !ok {
+		rpcInvalidReqMetricAdd()
 		rsp.RspCode = RpcErrNoRemoteFunc
-		service.sendRpcRsp(current, rsp)
 		sysLog.Error("no rpc function: %s", req.FuncName)
-		return
+		return &rsp
 	}
 
-	spb := Spb{[]byte(req.ReqData), 0}
+	spb := Spb{req.ReqData, 0}
 
 	var e error
 	funcT := m.Type
@@ -220,12 +325,12 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	for i := 1; i < funcT.NumIn(); i++ {
 		t := funcT.In(i)
 		val := newValByType(t)
-		e = rpcUnmarshal(&spb, uint32(i), val.Interface())
+		e = RpcUnmarshal(&spb, uint32(i), val.Interface())
 		if e != nil {
+			rpcInvalidReqMetricAdd()
 			rsp.RspCode = RpcErrFuncParamErr
-			service.sendRpcRsp(current, rsp)
 			sysLog.Error("function %s param unpack failed: %s", req.FuncName, e.Error())
-			return
+			return &rsp
 		}
 		if t.Kind() == reflect.Ptr {
 			funcVals[i] = val
@@ -237,21 +342,20 @@ func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) 
 	returns := funcV.Call(funcVals)
 
 	if req.IsOneWay {
-		return
+		return nil
 	}
 
 	spbSend := Spb{}
 	for i, v := range returns {
-		e = rpcMarshal(&spbSend, uint32(i+1), v.Interface())
+		e = RpcMarshal(&spbSend, uint32(i+1), v.Interface())
 		if e != nil {
 			rsp.RspCode = RpcErrFuncParamErr
-			service.sendRpcRsp(current, rsp)
 			sysLog.Error("function %s param pack failed: %s", req.FuncName, e.Error())
-			return
+			return &rsp
 		}
 	}
 	rsp.RspData = spbSend.buf
-	service.sendRpcRsp(current, rsp)
+	return &rsp
 }
 
 func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
@@ -266,6 +370,8 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 	service.rpcMutex.Unlock()
 
 	if rsp.RspCode != 0 {
+		rpcFailedMetricAdd()
+
 		if v.exception != nil {
 			v.exception(rsp.RspCode)
 		}
@@ -279,8 +385,9 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 			for i := 0; i < funcT.NumIn(); i++ {
 				t := funcT.In(i)
 				val := newValByType(t)
-				e = rpcUnmarshal(&spb, uint32(i+1), val.Interface())
+				e = RpcUnmarshal(&spb, uint32(i+1), val.Interface())
 				if e != nil {
+					rpcFailedMetricAdd()
 					if v.exception != nil {
 						v.exception(RpcErrFuncParamErr)
 					}
@@ -296,19 +403,37 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 			funcV := reflect.ValueOf(v.callback)
 			funcV.Call(funcVals)
 		}
+		rpcSuccessMetricAdd()
 	}
 }
 
+const (
+	TyMsgRpcReq       = 0
+	TyMsgRpcRsp       = 1
+	TyMsgRouterRpcReq = 2
+	TyMsgRouterRpcRsp = 3
+	TyMsgPush         = 5
+	TyMsgRouterPush   = 6
+)
+
 func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
-	//todo: req rsp
-	if msgID == 0 {
-		//service.imp.HandleReq(current, msg.(*ReqProto))
-	} else if msgID == 1 {
-		//service.imp.HandleRsp(current, msg.(*RspProto))
-	} else if msgID == 2 { //rpc req
-		service.handleRpcReq(current, msg.(*ReqProto))
-	} else if msgID == 3 { //rpc rsp
+	if msgID == TyMsgRpcReq { //rpc req
+		rsp := service.handleRpcReq(current, msg.(*ReqProto))
+		if rsp != nil {
+			service.sendRpcRsp(current, rsp)
+		}
+	} else if msgID == TyMsgRpcRsp { //rpc rsp
 		service.handleRpcRsp(msg.(*RspProto))
+	} else if msgID == TyMsgPush { //push
+		rpcRecvPushMetricAdd()
+		service.impEx.HandlePush(current, msg.(*PushProto))
+	} else if msgID == TyMsgRouterRpcReq { //router rpc req
+		service.handleRouterRpcReq(current, msg.(*RouterMsgReq))
+	} else if msgID == TyMsgRouterRpcRsp { //router rpc rsp
+		service.handleRpcRsp(msg.(*RspProto))
+	} else if msgID == TyMsgRouterPush { //push
+		rpcRecvPushMetricAdd()
+		service.impEx.HandlePush(current, msg.(*PushProto))
 	} else {
 		sysLog.Error("invalid msgid %d", msgID)
 	}
@@ -332,75 +457,123 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 	}
 
 	flag := data[0]
-	if flag&0x1 == 0 { //req
-		req := &ReqProto{}
-		e := Unmarshal(data[4:msgLen], req, 0)
-		if e != nil {
-			return int(msgLen), 0, nil, e
-		}
+	if flag&0x2 == 0 { //push
+		if flag&0x1 == 0 {
+			if flag&0x4 == 0 {
+				req := &PushProto{}
+				e := Unmarshal(data[4:msgLen], req, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+				return int(msgLen), TyMsgPush, req, nil
+			} else { //router
+				req := &RouterMsgPush{}
+				e := Unmarshal(data[4:msgLen], req, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
 
-		if flag&0x2 == 0 {
-			return int(msgLen), 0, req, nil
-		} else { //rpc
-			return int(msgLen), 2, req, nil
-		}
-	} else { //rsp
-		rsp := &RspProto{}
-		e := Unmarshal(data[4:msgLen], rsp, 0)
-		if e != nil {
-			return int(msgLen), 0, nil, e
-		}
-
-		if flag&0x2 == 0 {
-			return int(msgLen), 1, rsp, nil
-		} else { //rpc
-			service.rpcMutex.Lock()
-			v, ok := service.rpcRequests[rsp.RspCmdSeq]
-			if ok && v.signal != nil { //sync call
-				v.signal <- rsp
-				service.rpcMutex.Unlock()
-				return int(msgLen), -1, nil, nil
+				r := &PushProto{}
+				e = Unmarshal(req.RawData, r, 0)
+				if e != nil {
+					sysLog.Error("%s@%s PushProto.RawData unmarshal failed: %s", req.SrcService, req.SrcAddr, e.Error())
+					return int(msgLen), 0, nil, e
+				}
+				return int(msgLen), TyMsgRouterPush, r, nil
 			}
-			service.rpcMutex.Unlock()
-			//async call
-			return int(msgLen), 3, rsp, nil
+		}
+	} else { //rpc
+		if flag&0x1 == 0 { //req
+			if flag&0x4 == 0 {
+				req := &ReqProto{}
+				e := Unmarshal(data[4:msgLen], req, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+				return int(msgLen), TyMsgRpcReq, req, nil
+			} else { //router
+				req := &RouterMsgReq{}
+				e := Unmarshal(data[4:msgLen], req, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+				return int(msgLen), TyMsgRouterRpcReq, req, nil
+			}
+		} else { //rsp
+			if flag&0x4 == 0 {
+				rsp := &RspProto{}
+				e := Unmarshal(data[4:msgLen], rsp, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+
+				rpcResponseMetricAdd()
+
+				service.rpcMutex.Lock()
+				v, ok := service.rpcRequests[rsp.RspCmdSeq]
+				if ok && v.signal != nil { //sync call
+					v.signal <- rsp
+					service.rpcMutex.Unlock()
+					return int(msgLen), -1, nil, nil
+				}
+				service.rpcMutex.Unlock()
+				//async call
+				return int(msgLen), TyMsgRpcRsp, rsp, nil
+			} else { //router
+				rsp := &RouterMsgRsp{}
+				e := Unmarshal(data[4:msgLen], rsp, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+
+				rpcResponseMetricAdd()
+
+				r := &RspProto{}
+				e = Unmarshal(rsp.RawData, r, 0)
+				if e != nil {
+					sysLog.Error("%s->%s RouterMsgRsp.RawData unmarshal failed: %s", rsp.FromAddr, rsp.FromService, e.Error())
+					return int(msgLen), 0, nil, e
+				}
+
+				service.rpcMutex.Lock()
+				v, ok := service.rpcRequests[r.RspCmdSeq]
+				if ok && v.signal != nil { //sync call
+					v.signal <- r
+					service.rpcMutex.Unlock()
+					return int(msgLen), -1, nil, nil
+				}
+				service.rpcMutex.Unlock()
+				//async call
+				return int(msgLen), TyMsgRouterRpcRsp, r, nil
+			}
 		}
 	}
+
+	return int(msgLen), 0, nil, fmt.Errorf("message is invalid,flag: %d", flag)
 }
 
 func (service *ServiceRpc) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return service.imp.HashProcessor(current)
 }
 
-//extra: req rsp
-/*
-func (service *ServiceRpc) SendUdpReq(sess *Session, peer net.Addr, req ReqProto) error {
-	buf, e := encodeProtocol(&req, 0)
+func (service *ServiceRpc) Push(ps *PushProto) error {
+	buf, e := encodeProtocol(ps, 0)
 	if e != nil {
 		return e
 	}
-	return sess.Send(buf, peer)
+	service.base.IterateSession(func(sess *Session) bool {
+		rpcSendPushMetricAdd()
+		sess.Send(buf, nil)
+		return true
+	})
+	return nil
 }
 
-func (service *ServiceRpc) SendUdpRsp(sess *Session, peer net.Addr, rsp RspProto) error {
-	buf, e := encodeProtocol(&rsp, 0)
-	if e != nil {
-		return e
+func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req *ReqProto) error {
+	if req == nil {
+		return fmt.Errorf("request is nil")
 	}
-	buf[0] |= 0x1
-	return sess.Send(buf, peer)
-}
-
-func (service *ServiceRpc) SendReq(sess *Session, req ReqProto) error {
-	return service.SendUdpReq(sess, nil, req)
-}
-
-func (service *ServiceRpc) SendRsp(sess *Session, rsp RspProto) error {
-	return service.SendUdpRsp(sess, nil, rsp)
-}*/
-
-func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req ReqProto) error {
-	buf, e := encodeProtocol(&req, 0)
+	buf, e := encodeProtocol(req, 0)
 	if e != nil {
 		return e
 	}
@@ -408,8 +581,11 @@ func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req ReqProto
 	return sess.Send(buf, peer)
 }
 
-func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp RspProto) error {
-	buf, e := encodeProtocol(&rsp, 0)
+func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp *RspProto) error {
+	if rsp == nil {
+		return fmt.Errorf("response is nil")
+	}
+	buf, e := encodeProtocol(rsp, 0)
 	if e != nil {
 		return e
 	}
@@ -417,6 +593,70 @@ func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp RspProto) err
 	return current.Sess.Send(buf, current.Peer)
 }
 
+func (service *ServiceRpc) sendRouterRpcReq(sess *Session, peer net.Addr, req *ReqProto) error {
+	if req == nil {
+		return fmt.Errorf("request is nil")
+	}
+
+	i := strings.Index(req.FuncName, "@")
+	if i <= 0 {
+		return fmt.Errorf("RouterRpc request is nil,FuncName=%s", req.FuncName)
+	}
+	serviceName := req.FuncName[i+1:]
+	req.FuncName = req.FuncName[0:i]
+
+	var r RouterMsgReq
+	r.DstService = serviceName
+	d, e := Marshal(req, 0)
+	if e != nil {
+		return e
+	}
+	r.RawData = d
+
+	d1, e1 := Marshal(&r, 0)
+	if e1 != nil {
+		return e1
+	}
+
+	var cmd JsonProto
+	cmd.CmdId = RouterMsgTypeReq
+	cmd.CmdData = d1
+
+	buf, e2 := encodeProtocol(&cmd, 0)
+	if e2 != nil {
+		return e2
+	}
+	buf[0] = 0x6
+
+	return sess.Send(buf, peer)
+}
+
+func sendRouterRsp(current *CurrentContent, req *RouterMsgReq, rsp *RspProto, flag byte) {
+	if rsp == nil { //isoneway
+		return
+	}
+	d, _ := Marshal(rsp, 0)
+
+	var mr RouterMsgRsp
+	mr.FromAddr = req.RunAddr
+	mr.FromService = req.RunService
+	mr.ToSessID = req.SrcSessID
+	mr.ToAddr = req.SrcAddr
+	mr.RawData = d
+
+	d1, _ := Marshal(&mr, 0)
+
+	var cmd JsonProto
+	cmd.CmdId = RouterMsgTypeRsp
+	cmd.CmdData = d1
+
+	buf, _ := encodeProtocol(&cmd, 0)
+	buf[0] = flag
+	current.Sess.Send(buf, current.Peer)
+}
+
+// b[0] mark msg's type: 1stBit marks req(0) or rsp（1);2ndBit marks rpc(1) or not(0);
+// b[0] 3rdBit marks router(1) or not(0);
 func msgLen(b []byte) uint32 {
 	return uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 //| uint32(b[0])<<24
 }
@@ -435,7 +675,158 @@ func encodeProtocol(msg interface{}, encode int) ([]byte, error) {
 	spbMsg.packData(data)
 	flag := spbMsg.buf[0]
 	if flag > 0 {
-		return nil, fmt.Errorf("msg is too long: %d,max size is 16k", msglen)
+		return nil, fmt.Errorf("msg is too long: %d,max size is 16m", msglen)
 	}
 	return spbMsg.buf, nil
+}
+
+type RpcClientService struct {
+	base       *Service
+	rpc        *ServiceRpc
+	mapDomains map[string][]string
+	mapConns   map[string]*Connector
+	mapLock    sync.RWMutex
+}
+
+func newRpcClient(addr map[string]string, svr *Service, rpc *ServiceRpc) *RpcClientService {
+	r := &RpcClientService{}
+	r.base = svr
+	r.rpc = rpc
+	r.mapDomains = make(map[string][]string)
+
+	ips := make(map[string]string)
+	for k, v := range addr {
+		_, e := netip.ParseAddrPort(v)
+		if e != nil { //is domain
+			ss := strings.Split(v, ":")
+			if len(ss) != 2 {
+				panic("error ip format: " + v)
+			}
+			ads, er := net.LookupHost(ss[0])
+			if er != nil {
+				panic("domain lookup failed: " + er.Error())
+			}
+			if len(ads) == 0 {
+				panic("domain lookup null: " + v)
+			}
+			r.mapDomains[k+":"+v] = ads
+			ips[k] = ads[randInt()%len(ads)] + ":" + ss[1]
+		} else {
+			ips[k] = v
+		}
+	}
+
+	r.mapLock.Lock()
+	r.mapConns = make(map[string]*Connector)
+	for k, v := range ips {
+		r.mapConns[k] = r.base.NewConnect(v, nil)
+	}
+	r.mapLock.Unlock()
+
+	if len(r.mapDomains) > 0 {
+		go func() {
+			time.Sleep(time.Minute * 5)
+			r.resolveDomain()
+		}()
+	}
+
+	return r
+}
+
+func (r *RpcClientService) resolveDomain() {
+	for k, v := range r.mapDomains {
+		ss := strings.Split(k, ":")
+		sn := ss[0]
+		do := ss[1]
+		po := ss[2]
+
+		ads, er := net.LookupHost(do)
+		if er != nil || len(ads) == 0 {
+			continue
+		}
+
+		var addIPs []string
+		var delIPs []string
+		for _, ol := range v {
+			f := false
+			for _, ne := range ads {
+				if ol == ne {
+					f = true
+					break
+				}
+			}
+			if !f {
+				delIPs = append(delIPs, ol)
+			}
+		}
+		for _, ne := range ads {
+			f := false
+			for _, ol := range v {
+				if ol == ne {
+					f = true
+					break
+				}
+			}
+			if !f {
+				addIPs = append(addIPs, ne)
+			}
+		}
+		if len(addIPs)+len(delIPs) == 0 { //no change
+			continue
+		}
+
+		r.mapDomains[k] = ads
+		if len(addIPs) > 0 {
+			newAddr := ads[randInt()%len(ads)] + ":" + po
+			r.mapLock.RLock()
+			if c, ok := r.mapConns[sn]; ok {
+				c.ChangeAddr(newAddr)
+			}
+			r.mapLock.RUnlock()
+		} else if len(delIPs) > 0 {
+			r.mapLock.RLock()
+			if c, ok := r.mapConns[sn]; ok {
+				oldAddr := c.Addr()
+				for _, d := range delIPs {
+					if d == oldAddr {
+						newAddr := ads[randInt()%len(ads)] + ":" + po
+						c.ChangeAddr(newAddr)
+						break
+					}
+				}
+			}
+			r.mapLock.RUnlock()
+		}
+	}
+}
+
+func (r *RpcClientService) getSession(name string) *Session {
+	r.mapLock.RLock()
+	if c, ok := r.mapConns[name]; ok {
+		r.mapLock.RUnlock()
+		return c.Session()
+	}
+	r.mapLock.RUnlock()
+	return nil
+}
+func (r *RpcClientService) RpcCall(service string, funcName string, params ...interface{}) error {
+	sess := r.getSession(service)
+	if sess == nil {
+		return fmt.Errorf("%s is not found.", service)
+	}
+	return r.rpc.RpcCall(sess, funcName, params...)
+}
+func (r *RpcClientService) RpcCallSync(service string, funcName string, params ...interface{}) error {
+	sess := r.getSession(service)
+	if sess == nil {
+		return fmt.Errorf("%s is not found.", service)
+	}
+	return r.rpc.RpcCall_Sync(sess, funcName, params...)
+}
+func (r *RpcClientService) CloseConnector(serviceName string) {
+	r.mapLock.RLock()
+	if c, ok := r.mapConns[serviceName]; ok {
+		c.Close()
+	}
+	r.mapLock.RUnlock()
 }

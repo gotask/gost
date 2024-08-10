@@ -3,7 +3,6 @@ package stnet
 import (
 	"fmt"
 	"math/rand"
-	"reflect"
 )
 
 // ServiceImpBase
@@ -96,7 +95,7 @@ func (service *ServiceProxyS) SessionOpen(sess *Session) {
 }
 func (service *ServiceProxyS) SessionClose(sess *Session) {
 	if sess.UserData != nil {
-		sess.UserData.(*Connect).Close()
+		sess.UserData.(*Connector).Close()
 	}
 }
 func (service *ServiceProxyS) HeartBeatTimeOut(sess *Session) {
@@ -106,7 +105,7 @@ func (service *ServiceProxyS) HandleError(current *CurrentContent, err error) {
 	current.Sess.Close()
 }
 func (service *ServiceProxyS) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	sess.UserData.(*Connect).Send(data)
+	sess.UserData.(*Connector).Send(data)
 	return len(data), -1, nil, nil
 }
 func (service *ServiceProxyS) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
@@ -123,96 +122,6 @@ func (service *ServiceProxyC) Unmarshal(sess *Session, data []byte) (lenParsed i
 }
 func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return int(current.Sess.GetID())
-}
-
-// ServiceSpb
-type ServiceSpb struct {
-	ServiceBase
-	imp    SpbService
-	msgReg map[uint64]reflect.Type
-}
-
-func NewServiceSpb(imp SpbService) *ServiceSpb {
-	return &ServiceSpb{ServiceBase{}, imp, make(map[uint64]reflect.Type)}
-}
-
-func (service *ServiceSpb) RegisterMsg(msgId uint64, msg interface{}) error {
-	t := reflect.TypeOf(msg)
-	if msg == nil || t.Kind() == reflect.Ptr {
-		return fmt.Errorf("type of msg cannot be ptr or nil")
-	}
-	service.msgReg[msgId] = t
-	return nil
-}
-
-func (service *ServiceSpb) Init() bool {
-	return service.imp.Init()
-}
-
-func (service *ServiceSpb) Loop() {
-	service.imp.Loop()
-}
-
-func (service *ServiceSpb) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
-	t, ok := service.msgReg[msgID]
-	if !ok {
-		service.imp.Handle(current, msgID, msg, nil)
-		return
-	}
-
-	var d []byte
-	if msg != nil {
-		d, ok = msg.([]byte)
-		if !ok {
-			service.imp.Handle(current, msgID, msg, fmt.Errorf("msg unmarshal failed id=%d,err=msg not marshaled bytes", msgID))
-			return
-		}
-	}
-	m := reflect.New(t).Interface()
-	e := Unmarshal(d, m, EncodeTyepSpb)
-	if e != nil {
-		service.imp.Handle(current, msgID, nil, fmt.Errorf("msg unmarshal failed id=%d,err=%s", msgID, e.Error()))
-	} else {
-		service.imp.Handle(current, msgID, m, nil)
-	}
-}
-func (service *ServiceSpb) HandleError(current *CurrentContent, err error) {
-	service.imp.Handle(current, 0, nil, err)
-}
-func (service *ServiceSpb) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	if len(data) < 4 {
-		return 0, 0, nil, nil
-	}
-	msgLen := MsgLen(data)
-	if msgLen < 4 || msgLen >= uint32(MaxMsgSize) {
-		return len(data), 0, nil, fmt.Errorf("message length is invalid: %d", msgLen)
-	}
-
-	if len(data) < int(msgLen) {
-		return 0, 0, nil, nil
-	}
-	cmd := JsonProto{}
-	e := Unmarshal(data[4:msgLen], &cmd, EncodeTyepSpb)
-	if e != nil {
-		return int(msgLen), 0, nil, e
-	}
-	return int(msgLen), int64(cmd.CmdId), cmd.CmdData, nil
-}
-func (service *ServiceSpb) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	return service.imp.HashProcessor(current, msgID)
-}
-
-func SendSpbCmd(sess *Session, msgID uint64, msg interface{}) error {
-	d, e := Marshal(msg, EncodeTyepSpb)
-	if e != nil {
-		return e
-	}
-	cmd := JsonProto{msgID, d}
-	buf, e := EncodeProtocol(cmd, EncodeTyepSpb)
-	if e != nil {
-		return e
-	}
-	return sess.Send(buf, nil)
 }
 
 // ServiceJson
@@ -271,7 +180,11 @@ func (service *ServiceJson) HashProcessor(current *CurrentContent, msgID uint64,
 	return service.imp.HashProcessor(current, JsonProto{msgID, d})
 }
 
-func SendJsonCmd(sess *Session, msgID uint64, msg []byte) error {
+type JsonServiceImp struct {
+	*Service
+}
+
+func (js *JsonServiceImp) SendJsonCmd(sess *Session, msgID uint64, msg []byte) error {
 	cmd := JsonProto{msgID, msg}
 	buf, e := EncodeProtocol(cmd, EncodeTyepJson)
 	if e != nil {

@@ -43,9 +43,9 @@ func NewServer(loopmsec uint32, threadnum int) *Server {
 	return svr
 }
 
-func (svr *Server) newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) (*Service, error) {
+func (svr *Server) newService(name, address string, heartbeat uint32, imp ServiceImp, netSignal *[]chan int, threadId int) *Service {
 	if imp == nil || netSignal == nil {
-		return nil, fmt.Errorf("ServiceImp should not be nil")
+		panic(fmt.Errorf("ServiceImp should not be nil"))
 	}
 	msgTh := make([]chan sessionMessage, svr.ProcessorThreadsNum)
 	for i := 0; i < svr.ProcessorThreadsNum; i++ {
@@ -72,71 +72,117 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 			lis, err = NewListener(ipport, sve, heartbeat)
 		}
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 		sve.Listener = lis
 	}
 
-	return sve, nil
+	return sve
 }
 
 // AddService must be called before server started.
 // address could be null,then you get a service without listen; address could be udp,example udp:127.0.0.1:6060,default use tcp(127.0.0.1:6060)
-// when heartbeat(second)=0,heartbeat will be close.
+// when heartbeat (second)=0,heartbeat will be close.
 // threadId should be between 1-ProcessorThreadsNum.
 // call Service.NewConnect start a connector
-func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) (*Service, error) {
+func (svr *Server) AddService(name, address string, heartbeat uint32, imp ServiceImp, threadId int) *Service {
 	if threadId < 0 || threadId > svr.ProcessorThreadsNum {
-		return nil, fmt.Errorf("threadId should be 1-%s", svr.ProcessorThreadsNum)
+		sysLog.Error("threadId should be 1-%d,now=%d", svr.ProcessorThreadsNum, threadId)
+		if threadId <= 0 {
+			threadId = 1
+		}
 	}
 	threadId = threadId % svr.ProcessorThreadsNum
-	s, e := svr.newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
-	if e != nil {
-		return nil, e
-	}
+	s := svr.newService(name, address, heartbeat, imp, &svr.netSignal, threadId)
 	svr.services[threadId] = append(svr.services[threadId], s)
 	if name != "" {
 		svr.nameServices[name] = s
 	}
-	return s, e
+	return s
 }
 
-func (svr *Server) AddLoopService(name string, imp LoopService, threadId int) (*Service, error) {
-	return svr.AddService(name, "", 0, &ServiceLoop{ServiceBase{}, imp}, threadId)
+func (svr *Server) AddLoopService(name string, imp LoopService, threadId int) {
+	svr.AddService(name, "", 0, &ServiceLoop{ServiceBase{}, imp}, threadId)
 }
 
-func (svr *Server) AddEchoService(name, address string, heartbeat uint32, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, &ServiceEcho{}, threadId)
+func (svr *Server) AddEchoService(name, address string, heartbeat uint32, threadId int) {
+	svr.AddService(name, address, heartbeat, &ServiceEcho{}, threadId)
 }
 
-// AddHttpService rsp: HttpHandler
-func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, h *HttpHandler, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp, h}, threadId)
+func (svr *Server) AddHttpService(name, address string, heartbeat uint32, imp HttpService, h *HttpHandler, threadId int) {
+	svr.AddService(name, address, heartbeat, &ServiceHttp{ServiceBase{}, imp, h}, threadId)
 }
 
-// AddSpbService imp: NewServiceSpb, use SendSpbCmd to send message, RegisterMsg to register msg.
-func (svr *Server) AddSpbService(name, address string, heartbeat uint32, imp *ServiceSpb, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, imp, threadId)
+func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp JsonService, threadId int) JsonServiceInterface {
+	return &JsonServiceImp{svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)}
 }
 
-// AddJsonService use SendJsonCmd to send message
-func (svr *Server) AddJsonService(name, address string, heartbeat uint32, imp JsonService, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, &ServiceJson{ServiceBase{}, imp}, threadId)
+func (svr *Server) AddRpcService(name, address string, imp RpcService, threadId int) RpcServerInterface {
+	if imp == nil {
+		panic(fmt.Errorf("rpm imp cannot be null"))
+	}
+	r := newServiceRpc(imp, 0)
+	r.base = svr.AddService(name, address, 0, r, threadId)
+	return r
 }
 
-// AddRpcService imp:	NewServiceRpc
-func (svr *Server) AddRpcService(name, address string, heartbeat uint32, imp *ServiceRpc, threadId int) (*Service, error) {
-	return svr.AddService(name, address, heartbeat, imp, threadId)
+// AddRpcClient remoteServiceAddr: serviceName->ip:port
+func (svr *Server) AddRpcClient(remoteServiceAddr map[string]string, rpcTimeOutMilli int64, threadId int) RpcServiceInterface {
+	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
+	s := svr.AddService("", "", 0, r, threadId)
+	r.base = s
+	return newRpcClient(remoteServiceAddr, s, r)
 }
 
-func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId int, proxyaddr []string, proxyweight []int) error {
+func (svr *Server) AddRpcClientEx(remoteAddr map[string]string, rpcTimeOutMilli int64, threadId int, imp RpcServiceEx) RpcServiceInterface {
+	r := newServiceRpcEx(imp, rpcTimeOutMilli)
+	s := svr.AddService("", "", 0, r, threadId)
+	r.base = s
+	return newRpcClient(remoteAddr, s, r)
+}
+
+func (svr *Server) AddRouterService(address string, imp ServiceRouter, threadId int) {
+	rs := newRouterService(imp)
+	//heartbeat 5mins
+	s := svr.AddService("", address, 300, rs, threadId)
+	rs.base = s
+}
+
+// AddRouterClient routerAddr: router's address;
+func (svr *Server) AddRouterClient(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterServiceInterface {
+	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
+	rc := newRouterClient(r, &RouterRegister{appid, token, nil}, routerAddr)
+	s := svr.AddService("", "", 0, rc, threadId)
+	r.base = s
+	rc.base = s
+	return rc
+}
+
+func (svr *Server) AddRouterClientEx(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int, hp func(msg *PushProto)) RouterServiceInterface {
+	r := newServiceRpcEx(&RouterRpcServiceEx{hp}, rpcTimeOutMilli)
+	rc := newRouterClient(r, &RouterRegister{appid, token, nil}, routerAddr)
+	s := svr.AddService("", "", 0, rc, threadId)
+	r.base = s
+	rc.base = s
+	return rc
+}
+
+// RegisterToRouter localServiceAddr: local's service ip:port,register only once;
+func (svr *Server) RegisterToRouter(routerAddr []string, localServiceAddr map[string]string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterServiceInterface {
+	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
+	rc := newRouterClient(r, &RouterRegister{appid, token, localServiceAddr}, routerAddr)
+	s := svr.AddService("", "", 0, rc, threadId)
+	r.base = s
+	rc.base = s
+	return rc
+}
+
+// AddTcpProxyService tcp proxy
+func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId int, proxyaddr []string, proxyweight []int) {
 	if len(proxyaddr) > 1 && len(proxyaddr) != len(proxyweight) {
-		return fmt.Errorf("error proxy param")
+		panic(fmt.Errorf("error proxy param"))
 	}
-	c, e := svr.AddService("", "", 0, &ServiceProxyC{}, threadId)
-	if e != nil {
-		return e
-	}
+	c := svr.AddService("", "", 0, &ServiceProxyC{}, threadId)
 	s := &ServiceProxyS{}
 	s.remote = c
 	addr := make([]string, len(proxyaddr))
@@ -150,8 +196,7 @@ func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId
 		}
 		s.weight = weight
 	}
-	_, e = svr.AddService("", address, heartbeat, s, threadId)
-	return e
+	svr.AddService("", address, heartbeat, s, threadId)
 }
 
 // PushRequest push message into handle thread;id of thread is the result of ServiceImp.HashProcessor
@@ -208,8 +253,12 @@ func (svr *Server) Start() error {
 				}
 
 				//processing message of messageQ[threadIdx]
+				n := 0
 				for _, s := range all {
-					s.messageThread(current)
+					n += s.messageThread(current)
+				}
+				if n > 0 {
+					continue
 				}
 
 				subD := now.Sub(lastLoopTime)
@@ -278,6 +327,12 @@ func (svr *Server) Stop() {
 			s.imp.Destroy()
 		}
 	}
+	logMetric()
 	sysLog.Debug("server closed~~~~~~")
 	logClose()
+}
+
+func (svr *Server) StopWithSignal() {
+	sysWaitSignal()
+	svr.Stop()
 }

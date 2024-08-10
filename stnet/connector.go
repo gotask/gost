@@ -132,6 +132,9 @@ func (c *Connector) Close() {
 	c.closeLock.Unlock()
 
 	c.wg.Wait()
+
+	c.sess.parser.sessionEvent(c.sess, ConnClose)
+
 	sysLog.System("connection close, remote addr: %s", c.address)
 }
 

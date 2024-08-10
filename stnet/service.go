@@ -50,6 +50,8 @@ func (service *Service) handleMsg(current *CurrentContent, msg sessionMessage) {
 		service.imp.SessionOpen(msg.Sess)
 	} else if msg.DtType == Close {
 		service.imp.SessionClose(msg.Sess)
+	} else if msg.DtType == ConnClose {
+		service.onConnectClose(msg.Sess.conn)
 	} else if msg.DtType == HeartBeat {
 		service.imp.HeartBeatTimeOut(msg.Sess)
 	} else if msg.DtType == Data {
@@ -99,7 +101,7 @@ func (service *Service) destroy() {
 		service.Listener.Close()
 	}
 	service.connects.Range(func(k, v interface{}) bool {
-		v.(*Connect).destroy()
+		v.(*Connector).Close()
 		return true
 	})
 	for i := 0; i < service.svr.ProcessorThreadsNum; i++ {
@@ -193,40 +195,27 @@ func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	to.Stop()
 }
 
-func (service *Service) IterateConnect(callback func(*Connect) bool) {
+func (service *Service) IterateConnect(callback func(connector *Connector) bool) {
 	service.connects.Range(func(k, v interface{}) bool {
-		return callback(v.(*Connect))
+		return callback(v.(*Connector))
 	})
 }
 
-func (service *Service) GetConnect(id uint64) *Connect {
+func (service *Service) GetSession(id uint64) *Session {
 	v, ok := service.connects.Load(id)
 	if ok {
-		return v.(*Connect)
+		return v.(*Connector).sess
 	}
-	return nil
+	return service.Listener.GetSession(id)
 }
 
 // NewConnect reconnect at 0 1 4 9 16...times reconnectMSec(100ms);when call send or changeAddr, it will NotifyReconn and reconnect at once;when call Close, reconnect will stop
-func (service *Service) NewConnect(address string, userdata interface{}) *Connect {
-	conn := &Connect{NewConnector(address, service, userdata), service}
+func (service *Service) NewConnect(address string, userdata interface{}) *Connector {
+	conn := NewConnector(address, service, userdata)
 	service.connects.Store(conn.GetID(), conn)
 	return conn
 }
 
-type Connect struct {
-	*Connector
-	Master *Service
-}
-
-func (ct *Connect) Imp() ServiceImp {
-	return ct.Master.imp
-}
-
-func (ct *Connect) Close() {
-	go ct.destroy()
-	ct.Master.connects.Delete(ct.GetID())
-}
-func (ct *Connect) destroy() {
-	ct.Connector.Close()
+func (service *Service) onConnectClose(c *Connector) {
+	service.connects.Delete(c.GetID())
 }

@@ -17,7 +17,8 @@ type ServiceImp interface {
 	// Unmarshal protocol parsed
 	//lenParsed is the length read from 'data'.
 	//msgID and msg are messages parsed from data.
-	//when lenParsed <= 0 or msgID < 0,msg and err will be ignored.
+	//when lenParsed < 0 ,session will be closed.
+	//when msgID < 0,msg and err will be ignored.
 	Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error)
 
 	// HashProcessor sess msgID msg are returned by func of Unmarshal
@@ -41,11 +42,4 @@ type JsonService interface {
 	Loop()
 	Handle(current *CurrentContent, cmd JsonProto, e error)
 	HashProcessor(current *CurrentContent, cmd JsonProto) (processorID int)
-}
-
-type SpbService interface {
-	Init() bool
-	Loop()
-	Handle(current *CurrentContent, cmdId uint64, cmd interface{}, e error)
-	HashProcessor(current *CurrentContent, cmdId uint64) (processorID int)
 }

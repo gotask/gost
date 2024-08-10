@@ -35,6 +35,10 @@ const (
 	SpbPackDataType_StructEnd        = 8
 )
 
+func (spb *Spb) Buffer() []byte {
+	return spb.buf
+}
+
 func (spb *Spb) packData(data []byte) {
 	spb.buf = append(spb.buf, data...)
 }
@@ -144,6 +148,9 @@ func (spb *Spb) pack(tag uint32, i interface{}, packHead bool, require bool) err
 	v := reflect.ValueOf(i)
 	var x interface{}
 	if t.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			v = newValByType(t)
+		}
 		x = v.Elem().Interface()
 	} else {
 		x = v.Interface()
@@ -235,11 +242,13 @@ func (spb *Spb) pack(tag uint32, i interface{}, packHead bool, require bool) err
 		}
 	case reflect.Float32:
 		{
+			typ = SpbPackDataType_Float
 			v := x.(float32)
 			val = uint64(*(*uint32)(unsafe.Pointer(&v)))
 		}
 	case reflect.Float64:
 		{
+			typ = SpbPackDataType_Double
 			v := x.(float64)
 			val = uint64(*(*uint64)(unsafe.Pointer(&v)))
 		}
@@ -469,7 +478,7 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 	}
 
 	var valField reflect.Value
-	if x.Type().Kind() == reflect.Struct {
+	if !first && x.Type().Kind() == reflect.Struct {
 		isTag := false
 		for i := 0; i < x.NumField(); i++ {
 			tg := x.Type().Field(i).Tag.Get("tag")
@@ -685,6 +694,10 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 		{
 			stVal := x
 			if !first {
+				if valField.Kind() == reflect.Ptr {
+					valField.Set(newValByType(valField.Type().Elem()))
+					valField = valField.Elem()
+				}
 				stVal = valField
 			}
 			if stVal.Kind() != reflect.Struct {
@@ -693,7 +706,7 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 			}
 			for {
 				err := spb.unpack(stVal, false)
-				if err == errStructEnd {
+				if errors.Is(err, errStructEnd) {
 					break
 				}
 				if err != nil {

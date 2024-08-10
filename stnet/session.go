@@ -15,6 +15,7 @@ const (
 	Data CMDType = 0 + iota
 	Open
 	Close
+	ConnClose
 	HeartBeat
 	System
 )
@@ -48,15 +49,19 @@ type FuncOnClose = func(*Session)
 var (
 	MsgBuffSize = 1024
 	MinMsgSize  = 64
-	MaxMsgSize  = 2 * 1024 * 1024
+	MaxMsgSize  = 16 * 1024 * 1024
 
 	//the length of send(recv) queue
-	WriterListLen = 256
-	RecvListLen   = 256
+	WriterListLen = 1024
+	RecvListLen   = 1024
 )
 
 // session id
 var GlobalSessionID uint64
+
+func init() {
+	GlobalSessionID = uint64(randUInt32())
+}
 
 type rsData struct {
 	data []byte
@@ -75,6 +80,7 @@ type Session struct {
 	onclose   interface{}
 	isclose   *Closer
 	heartbeat uint32
+	isConn    bool
 	conn      *Connector
 	isUdp     bool
 	peer      net.Addr
@@ -104,6 +110,7 @@ func NewSession(con net.Conn, msgparse MsgParse, onopen FuncOnOpen, onclose Func
 		onclose:   onclose,
 		isclose:   NewCloser(false),
 		heartbeat: heartbeat,
+		isConn:    false,
 		isUdp:     isudp,
 	}
 	if isudp {
@@ -138,6 +145,7 @@ func newConnSession(msgparse MsgParse, onopen FuncOnOpen, onclose FuncOnClose, c
 		onclose:   onclose,
 		isclose:   NewCloser(true),
 		heartbeat: 0,
+		isConn:    true,
 		conn:      c,
 		isUdp:     isudp,
 	}
@@ -167,6 +175,9 @@ func (s *Session) restart(con net.Conn) error {
 	if !s.isclose.IsClose() {
 		return ErrSocketIsOpen
 	}
+
+	sessionReconnectMetricAdd()
+
 	s.isclose = NewCloser(false)
 	s.closer = make(chan int)
 	s.socket = con
@@ -197,6 +208,8 @@ func (s *Session) Peer() net.Addr {
 
 // Send peer is used in udp
 func (s *Session) Send(data []byte, peerUdp net.Addr) error {
+	sessionSendMsgMetricAdd()
+
 	msg := bp.Alloc(len(data))
 	copy(msg, data)
 
@@ -217,6 +230,8 @@ func (s *Session) Close() {
 	}
 	sysLog.System("session close, local addr: %s", s.socket.LocalAddr())
 	s.socket.Close()
+
+	sessionBeClosedMetricAdd()
 }
 
 func (s *Session) IsClose() bool {
@@ -255,6 +270,8 @@ func (s *Session) dosend() {
 				}
 			}
 			bp.Free(buf.data)
+
+			sessionSendSuccessMetricAdd()
 		}
 	}
 }
@@ -279,12 +296,16 @@ func (s *Session) dorecv() {
 		if s.onclose != nil && s.onclose.(FuncOnClose) != nil {
 			s.onclose.(FuncOnClose)(s)
 		}
+
+		sessionCloseMetricAdd()
 	}()
 
 	if s.onopen != nil && s.onopen.(FuncOnOpen) != nil {
 		s.onopen.(FuncOnOpen)(s)
 	}
 	s.parser.sessionEvent(s, Open)
+
+	sessionOpenMetricAdd()
 
 	var (
 		udpConn *net.UDPConn
@@ -311,6 +332,7 @@ func (s *Session) dorecv() {
 			//defer close
 			return
 		}
+		sessionRecvPackMetricAdd()
 		s.hander <- rsData{msgbuf[0:n], peer}
 		if s.isUdp {
 			msgbuf = bp.Alloc(MsgBuffSize)
@@ -373,14 +395,16 @@ func (s *Session) dohand() {
 			if tempBuf != nil {
 				buf.data = append(tempBuf, buf.data...)
 			}
-		anthorMsg:
+		anotherMsg:
 			parseLen := s.parser.ParseMsg(s, buf.data)
 			if parseLen >= len(buf.data) {
+				sessionRecvMsgMetricAdd()
 				tempBuf = nil
 				bp.Free(buf.data)
 			} else if parseLen > 0 {
+				sessionRecvMsgMetricAdd()
 				buf.data = buf.data[parseLen:]
-				goto anthorMsg
+				goto anotherMsg
 			} else if parseLen == 0 {
 				if s.isUdp {
 					sysLog.Error("udp need read all data once,length: %d, local addr: %s, remote addr: %s", len(buf.data), s.socket.LocalAddr(), buf.peer.String())

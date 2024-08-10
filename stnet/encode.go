@@ -34,11 +34,11 @@ func Unmarshal(data []byte, m interface{}, encodeType int) error {
 	return fmt.Errorf("error encode type %d", encodeType)
 }
 
-func rpcMarshal(spb *Spb, tag uint32, i interface{}) error {
+func RpcMarshal(spb *Spb, tag uint32, i interface{}) error {
 	return spb.pack(tag, i, true, true)
 }
 
-func rpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
+func RpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
 	rv := reflect.ValueOf(i)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())

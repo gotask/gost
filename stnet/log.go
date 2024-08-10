@@ -2,11 +2,12 @@ package stnet
 
 import (
 	"sync/atomic"
+	"time"
 )
 
 var (
-	sysLog *Logger
-	user   int32
+	sysLog  *Logger
+	logUser int32
 )
 
 func init() {
@@ -16,11 +17,21 @@ func init() {
 }
 
 func logOpen() {
-	atomic.AddInt32(&user, 1)
+	atomic.AddInt32(&logUser, 1)
+
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			if atomic.LoadInt32(&logUser) > 0 {
+				logMetric()
+				resetMetricInfo()
+			}
+		}
+	}()
 }
 
 func logClose() {
-	u := atomic.AddInt32(&user, -1)
+	u := atomic.AddInt32(&logUser, -1)
 	if u <= 0 {
 		sysLog.Close()
 	}
