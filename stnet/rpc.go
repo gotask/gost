@@ -268,8 +268,8 @@ func (service *ServiceRpc) Loop() {
 	timeouts := make([]*rpcRequest, 0)
 	service.rpcMutex.Lock()
 	for k, v := range service.rpcRequests {
-		if v.timeout < now {
-			if v.exception != nil && v.signal == nil {
+		if v.timeout < now && v.signal == nil {
+			if v.exception != nil {
 				timeouts = append(timeouts, v)
 			}
 			delete(service.rpcRequests, k)
@@ -363,7 +363,7 @@ func (service *ServiceRpc) handleRpcRsp(rsp *RspProto) {
 	v, ok := service.rpcRequests[rsp.RspCmdSeq]
 	if !ok {
 		service.rpcMutex.Unlock()
-		sysLog.Error("recv rpc rsp but req not found, func: %s", rsp.FuncName)
+		sysLog.Error("recv rpc rsp but req not found,%d %d func: %s", rsp.RspCmdSeq, rsp.RspCode, rsp.FuncName)
 		return
 	}
 	delete(service.rpcRequests, rsp.RspCmdSeq)

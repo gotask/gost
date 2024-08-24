@@ -282,7 +282,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 					rsp.FromService = req.RunService
 					var r RspProto
 					r.RspCode = RotErrNoRemoteService
-					if flag&0x2 == 1 { //rpc
+					if flag&0x2 != 0 { //rpc
 						re := &ReqProto{}
 						e := Unmarshal(req.RawData, re, 0)
 						if e != nil {

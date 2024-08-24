@@ -3,8 +3,8 @@ package stutil
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -41,6 +41,12 @@ type HttpRequest struct {
 	proxy       string
 }
 
+func (req *HttpRequest) SetBasicAuth(username, password string) *HttpRequest {
+	auth := username + ":" + password
+	basic := base64.StdEncoding.EncodeToString([]byte(auth))
+	return req.Header("Authorization", "Basic "+basic)
+}
+
 func (req *HttpRequest) Header(key, val string) *HttpRequest {
 	if req.headers == nil {
 		req.headers = make(map[string]string, 1)
@@ -68,10 +74,10 @@ func (req *HttpRequest) FormParm(k, v string) *HttpRequest {
 	return req
 }
 
-//params	post form的数据
-//nameField	请求地址上传文件对应field
-//fileName	文件名
-//file	文件
+// params	post form的数据
+// nameField	请求地址上传文件对应field
+// fileName	文件名
+// file	文件
 func (req *HttpRequest) FormFile(params map[string]string, nameField, fileName string, file io.Reader) (*HttpRequest, error) {
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
@@ -139,7 +145,7 @@ func (req *HttpRequest) Do(method string, sUrl string) (resp *http.Response, bod
 	}
 
 	if resp != nil {
-		body, err = ioutil.ReadAll(resp.Body)
+		body, err = io.ReadAll(resp.Body)
 		resp.Body.Close()
 	}
 	return
@@ -157,7 +163,7 @@ func (req *HttpRequest) build(method string, sUrl string) (request *http.Request
 	if len(req.binData) != 0 {
 		request, err = http.NewRequest(method, sUrl, bytes.NewBuffer(req.binData))
 	} else if len(req.urlValue) != 0 {
-		pr := ioutil.NopCloser(strings.NewReader(req.urlValue.Encode()))
+		pr := io.NopCloser(strings.NewReader(req.urlValue.Encode()))
 		request, err = http.NewRequest(method, sUrl, pr)
 	} else {
 		request, err = http.NewRequest(method, sUrl, nil)
