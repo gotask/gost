@@ -120,6 +120,11 @@ func (spb *Spb) packStruct(tag uint32, x interface{}, packHead bool) error {
 	}
 	spb.packHeader(tag, SpbPackDataType_StructBegin)
 	for i := 0; i < refVal.NumField(); i++ {
+		fld := refVal.Field(i)
+		if !fld.CanInterface() {
+			continue
+		}
+
 		iTg := i
 		tg := refVal.Type().Field(i).Tag.Get("tag")
 		if tg != "" {
@@ -133,7 +138,7 @@ func (spb *Spb) packStruct(tag uint32, x interface{}, packHead bool) error {
 		if req == "true" {
 			require = true
 		}
-		fld := refVal.Field(i)
+
 		err := spb.pack(uint32(iTg), fld.Interface(), true, require)
 		if err != nil {
 			return err
