@@ -59,10 +59,10 @@ func (spb *Spb) packHeader(tag uint32, typ uint8) {
 	header := typ << 4
 	if tag < 15 {
 		header = header | uint8(tag)
-		spb.packByte(byte(header))
+		spb.packByte(header)
 	} else {
 		header = header | 0xf
-		spb.packByte(byte(header))
+		spb.packByte(header)
 		spb.packNumber(uint64(tag))
 	}
 }
@@ -238,7 +238,7 @@ func (spb *Spb) pack(tag uint32, i interface{}, packHead bool, require bool) err
 	case reflect.Uint64:
 		{
 			v := x.(uint64)
-			val = uint64(v)
+			val = v
 		}
 	case reflect.Float32:
 		{
@@ -250,7 +250,7 @@ func (spb *Spb) pack(tag uint32, i interface{}, packHead bool, require bool) err
 		{
 			typ = SpbPackDataType_Double
 			v := x.(float64)
-			val = uint64(*(*uint64)(unsafe.Pointer(&v)))
+			val = *(*uint64)(unsafe.Pointer(&v))
 		}
 	case reflect.String:
 		{

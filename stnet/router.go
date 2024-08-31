@@ -14,7 +14,6 @@ const (
 	RouterMsgTypeReq  = 2 //request
 	RouterMsgTypeRsp  = 3 //response
 	RouterMsgTypePing = 4 //ping
-	RouterMsgTypePush = 5 //push
 )
 
 type RouterPing struct {
@@ -61,9 +60,8 @@ type ServiceRouter interface {
 }
 
 type RouterService struct {
-	base        *Service
-	imp         ServiceRouter
-	ignoreToken bool
+	base *Service
+	imp  ServiceRouter
 
 	mapServiceByName map[string][]string   //name->ips [HasPrefix match]
 	mapServiceByAddr map[string]*Connector //ip->sess
@@ -79,9 +77,19 @@ func newRouterService(imp ServiceRouter) *RouterService {
 	return &rs
 }
 
-func (service *RouterService) Init() bool {
-	service.ignoreToken = service.imp.IsValidToken("", "")
+func (service *RouterService) ListService(name string) map[string][]string {
+	res := make(map[string][]string)
+	service.mapLock.RLock()
+	for k, v := range service.mapServiceByName {
+		if strings.HasPrefix(k, name) {
+			res[k] = append(res[k], v...)
+		}
+	}
+	service.mapLock.RUnlock()
+	return res
+}
 
+func (service *RouterService) Init() bool {
 	service.mapServiceByName = make(map[string][]string)
 	service.mapServiceByAddr = make(map[string]*Connector)
 	service.mapAppSess = make(map[string]*Session)
@@ -99,7 +107,7 @@ func (service *RouterService) HandleMessage(current *CurrentContent, msgID uint6
 func (service *RouterService) SessionOpen(sess *Session) {
 	if !sess.isConn {
 		routerSessionOpenMetricAdd()
-		sess.UserData = &routerSessPData{IsValid: false}
+		sess.UserData = &routerSessPData{IsValid: service.imp.IsValidToken("", "")}
 	} else {
 		routerConnectOpenMetricAdd()
 	}
@@ -182,7 +190,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 		buf[0] = 0x4
 		service.base.IterateSession(func(s *Session) bool {
 			routerSendPushMetricAdd()
-			s.Send(buf, nil)
+			s.Send(buf)
 			return true
 		})
 		return int(msgLen), -1, nil, nil
@@ -253,7 +261,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 				return int(msgLen), 0, nil, fmt.Errorf("req session is from connect: %s", sess.socket.RemoteAddr().String())
 			}
 
-			if !service.ignoreToken && !sess.UserData.(*routerSessPData).IsValid {
+			if !sess.UserData.(*routerSessPData).IsValid {
 				sysLog.Error("session is not registered: %s", sess.socket.RemoteAddr().String())
 				return int(msgLen), -1, nil, nil
 			}
@@ -295,7 +303,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 					rsp.RawData = d
 					buf, _ := encodeProtocol(&rsp, 0)
 					buf[0] = flag | 0x5
-					sess.Send(buf, sess.peer)
+					sess.Send(buf)
 
 					sysLog.Error("service is not found: %s,src: %s", req.DstService, req.SrcAddr)
 					return int(msgLen), -1, nil, nil
@@ -332,7 +340,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 
 			buf, _ := encodeProtocol(&rsp, 0)
 			buf[0] = flag | 0x4
-			rs.Send(buf, rs.peer)
+			rs.Send(buf)
 			return int(msgLen), -1, nil, nil
 		}
 	}
@@ -574,11 +582,11 @@ func (service *RouterClient) HashProcessor(current *CurrentContent, msgID uint64
 }
 
 func (service *RouterClient) sendPing(sess *Session) error {
-	return sess.Send(service.pingBuff, nil)
+	return sess.Send(service.pingBuff)
 }
 
 func (service *RouterClient) sendMsgReg(sess *Session) error {
-	return sess.Send(service.regBuff, nil)
+	return sess.Send(service.regBuff)
 }
 
 func (service *RouterClient) RpcCall(serviceName string, funcName string, params ...interface{}) error {
@@ -586,7 +594,7 @@ func (service *RouterClient) RpcCall(serviceName string, funcName string, params
 		return fmt.Errorf("RpcCall serviceName cannot be null")
 	}
 	c := service.getValidConnector()
-	return service.rpc.rpc_call(false, true, c.Session(), nil, funcName+"@"+serviceName, params...)
+	return service.rpc.rpc_call(false, true, c.Session(), funcName+"@"+serviceName, params...)
 }
 
 func (service *RouterClient) RpcCallSync(serviceName string, funcName string, params ...interface{}) error {
@@ -594,7 +602,7 @@ func (service *RouterClient) RpcCallSync(serviceName string, funcName string, pa
 		return fmt.Errorf("RpcCall serviceName cannot be null")
 	}
 	c := service.getValidConnector()
-	return service.rpc.rpc_call(true, true, c.Session(), nil, funcName+"@"+serviceName, params...)
+	return service.rpc.rpc_call(true, true, c.Session(), funcName+"@"+serviceName, params...)
 }
 
 type RouterRpcServiceEx struct {
@@ -606,7 +614,7 @@ func (r *RouterRpcServiceEx) Loop() {
 func (r *RouterRpcServiceEx) HandleError(current *CurrentContent, err error) {
 	sysLog.Error("router rpc error: %s", err.Error())
 }
-func (r *RouterRpcServiceEx) HashProcessor(*CurrentContent) (processorID int) {
+func (r *RouterRpcServiceEx) HashProcessor(*CurrentContent, string) (processorID int) {
 	return 0
 }
 func (r *RouterRpcServiceEx) HandlePush(current *CurrentContent, msg *PushProto) {

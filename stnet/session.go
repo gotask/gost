@@ -23,14 +23,13 @@ const (
 var (
 	ErrSocketClosed = errors.New("socket closed")
 	ErrSocketIsOpen = errors.New("socket is open")
-	//ErrSendOverTime   = errors.New("send message over time")
-	// length of send(recv) buffer = 256(tcp) 10240(udp) default
+	//ErrSendBuffIsFull length of send(recv) buffer = 256(tcp) 10240(udp) default
 	ErrSendBuffIsFull = errors.New("send buffer is full")
 	ErrMsgParseNil    = errors.New("MsgParse is nil")
 )
 
 type MsgParse interface {
-	//*Session:session which recved message
+	//ParseMsg *Session:session which recved message
 	//CMDType:event type of msg
 	//[]byte:recved data now;
 	//int:length of recved data parsed;
@@ -51,12 +50,12 @@ var (
 	MinMsgSize  = 64
 	MaxMsgSize  = 16 * 1024 * 1024
 
-	//the length of send(recv) queue
+	//WriterListLen the length of send(recv) queue
 	WriterListLen = 1024
 	RecvListLen   = 1024
 )
 
-// session id
+// GlobalSessionID session id
 var GlobalSessionID uint64
 
 func init() {
@@ -206,8 +205,8 @@ func (s *Session) Peer() net.Addr {
 	return s.peer
 }
 
-// Send peer is used in udp
-func (s *Session) Send(data []byte, peerUdp net.Addr) error {
+// SendTo peer is used in udp
+func (s *Session) SendTo(data []byte, peerUdp net.Addr) error {
 	sessionSendMsgMetricAdd()
 
 	msg := bp.Alloc(len(data))
@@ -222,6 +221,10 @@ func (s *Session) Send(data []byte, peerUdp net.Addr) error {
 		sysLog.Error("session sending queue is full and the message is droped;sessionid=%d", s.id)
 		return ErrSendBuffIsFull
 	}
+}
+
+func (s *Session) Send(data []byte) error {
+	return s.SendTo(data, nil)
 }
 
 func (s *Session) Close() {

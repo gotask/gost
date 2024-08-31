@@ -5,13 +5,13 @@ type ServiceImp interface {
 	Loop()
 	Destroy()
 
-	//in hash thread by HashProcessor
+	//HandleMessage in someone thread by HashProcessor
 	HandleMessage(current *CurrentContent, msgID uint64, msg interface{})
-	//in main thread of service
+	//HandleError in main thread of service
 	HandleError(*CurrentContent, error)
 	SessionClose(sess *Session)
 	HeartBeatTimeOut(sess *Session)
-	//in random thread
+	//SessionOpen in random thread(session thread)
 	SessionOpen(sess *Session)
 
 	// Unmarshal protocol parsed
@@ -24,7 +24,7 @@ type ServiceImp interface {
 	// HashProcessor sess msgID msg are returned by func of Unmarshal
 	//processorID is the thread who process this msg;it should be between 1-ProcessorThreadsNum.
 	//if processorID == 0, it only uses main thread of the service.
-	//if processorID < 0, it will use hash of session id.
+	//if processorID == -1, it will use hash of session id.
 	HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int)
 }
 

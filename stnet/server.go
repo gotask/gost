@@ -52,12 +52,12 @@ func (svr *Server) newService(name, address string, heartbeat uint32, imp Servic
 		msgTh[i] = make(chan sessionMessage, 10240)
 	}
 	sve := &Service{
-		Name:      name,
-		imp:       imp,
-		messageQ:  msgTh,
-		netSignal: netSignal,
-		threadId:  threadId,
-		svr:       svr,
+		Name:                name,
+		imp:                 imp,
+		messageQ:            msgTh,
+		netSignal:           netSignal,
+		threadId:            threadId,
+		ProcessorThreadsNum: svr.ProcessorThreadsNum,
 	}
 
 	if address != "" {
@@ -127,29 +127,30 @@ func (svr *Server) AddRpcService(name, address string, imp RpcService, threadId 
 }
 
 // AddRpcClient remoteServiceAddr: serviceName->ip:port
-func (svr *Server) AddRpcClient(remoteServiceAddr map[string]string, rpcTimeOutMilli int64, threadId int) RpcServiceInterface {
+func (svr *Server) AddRpcClient(remoteServiceAddr map[string]string, rpcTimeOutMilli int64, threadId int) RpcClientInterface {
 	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
 	s := svr.AddService("", "", 0, r, threadId)
 	r.base = s
 	return newRpcClient(remoteServiceAddr, s, r)
 }
 
-func (svr *Server) AddRpcClientEx(remoteAddr map[string]string, rpcTimeOutMilli int64, threadId int, imp RpcServiceEx) RpcServiceInterface {
+func (svr *Server) AddRpcClientEx(remoteAddr map[string]string, rpcTimeOutMilli int64, threadId int, imp RpcServiceEx) RpcClientInterface {
 	r := newServiceRpcEx(imp, rpcTimeOutMilli)
 	s := svr.AddService("", "", 0, r, threadId)
 	r.base = s
 	return newRpcClient(remoteAddr, s, r)
 }
 
-func (svr *Server) AddRouterService(address string, imp ServiceRouter, threadId int) {
+func (svr *Server) AddRouterService(address string, imp ServiceRouter, threadId int) RouterServerInterface {
 	rs := newRouterService(imp)
 	//heartbeat 5mins
 	s := svr.AddService("", address, 300, rs, threadId)
 	rs.base = s
+	return rs
 }
 
 // AddRouterClient routerAddr: router's address;
-func (svr *Server) AddRouterClient(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterServiceInterface {
+func (svr *Server) AddRouterClient(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterClientInterface {
 	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
 	rc := newRouterClient(r, &RouterRegister{appid, token, nil}, routerAddr)
 	s := svr.AddService("", "", 0, rc, threadId)
@@ -158,7 +159,7 @@ func (svr *Server) AddRouterClient(routerAddr []string, appid, token string, rpc
 	return rc
 }
 
-func (svr *Server) AddRouterClientEx(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int, hp func(msg *PushProto)) RouterServiceInterface {
+func (svr *Server) AddRouterClientEx(routerAddr []string, appid, token string, rpcTimeOutMilli int64, threadId int, hp func(msg *PushProto)) RouterClientInterface {
 	r := newServiceRpcEx(&RouterRpcServiceEx{hp}, rpcTimeOutMilli)
 	rc := newRouterClient(r, &RouterRegister{appid, token, nil}, routerAddr)
 	s := svr.AddService("", "", 0, rc, threadId)
@@ -168,7 +169,7 @@ func (svr *Server) AddRouterClientEx(routerAddr []string, appid, token string, r
 }
 
 // RegisterToRouter localServiceAddr: local's service ip:port,register only once;
-func (svr *Server) RegisterToRouter(routerAddr []string, localServiceAddr map[string]string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterServiceInterface {
+func (svr *Server) RegisterToRouter(routerAddr []string, localServiceAddr map[string]string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterClientInterface {
 	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
 	rc := newRouterClient(r, &RouterRegister{appid, token, localServiceAddr}, routerAddr)
 	s := svr.AddService("", "", 0, rc, threadId)
@@ -187,7 +188,7 @@ func (svr *Server) AddTcpProxyService(address string, heartbeat uint32, threadId
 	s.remote = c
 	addr := make([]string, len(proxyaddr))
 	copy(addr, proxyaddr)
-	s.remoteip = addr
+	s.remoteIP = addr
 	if len(addr) > 1 {
 		weight := make([]int, len(proxyweight))
 		copy(weight, proxyweight)
@@ -219,8 +220,8 @@ func (svr *Server) SetLogLvl(lvl Level) {
 type CurrentContent struct {
 	GoroutineID int //thead id
 	Sess        *Session
-	UserDefined interface{}
-	Peer        net.Addr //use in udp
+	Peer        net.Addr
+	UserDefine  interface{}
 }
 
 func (svr *Server) Start() error {
@@ -239,7 +240,6 @@ func (svr *Server) Start() error {
 	for k, v := range svr.services {
 		svr.wg.Add(1)
 		go func(threadIdx int, ms []*Service, all []*Service) {
-			current := &CurrentContent{GoroutineID: threadIdx}
 			lastLoopTime := time.Now()
 			needD := time.Duration(svr.loopmsec) * time.Millisecond
 			for !svr.isClose.IsClose() {
@@ -255,7 +255,7 @@ func (svr *Server) Start() error {
 				//processing message of messageQ[threadIdx]
 				n := 0
 				for _, s := range all {
-					n += s.messageThread(current)
+					n += s.messageThread(threadIdx)
 				}
 				if n > 0 {
 					continue
@@ -282,11 +282,10 @@ func (svr *Server) Start() error {
 		}
 		svr.wg.Add(1)
 		go func(idx int, ss []*Service) {
-			current := &CurrentContent{GoroutineID: idx}
 			for !svr.isClose.IsClose() {
 				nmsg := 0
 				for _, s := range ss {
-					nmsg += s.messageThread(current)
+					nmsg += s.messageThread(idx)
 				}
 				if nmsg == 0 {
 					//wait for new message

@@ -2,7 +2,6 @@ package stnet
 
 import (
 	"fmt"
-	"net"
 	"runtime"
 	"strings"
 	"sync"
@@ -11,14 +10,13 @@ import (
 
 type Service struct {
 	*Listener
-	Name     string
-	imp      ServiceImp
-	messageQ []chan sessionMessage
-	connects sync.Map //map[uint64]*Connect
-	//connectMutex sync.Mutex
-	netSignal *[]chan int
-	threadId  int
-	svr       *Server
+	Name                string
+	imp                 ServiceImp
+	messageQ            []chan sessionMessage
+	connects            sync.Map //map[uint64]*Connect
+	netSignal           *[]chan int
+	threadId            int
+	ProcessorThreadsNum int //number of threads in server.
 }
 
 func parseAddress(address string) (network string, ipport string) {
@@ -41,19 +39,18 @@ func (service *Service) handlePanic() {
 	}
 }
 
-func (service *Service) handleMsg(current *CurrentContent, msg sessionMessage) {
-	current.Sess = msg.Sess
-	current.Peer = msg.peer
+func (service *Service) handleMsg(msg sessionMessage) {
+	current := msg.current
 	if msg.Err != nil {
 		service.imp.HandleError(current, msg.Err)
 	} else if msg.DtType == Open {
-		service.imp.SessionOpen(msg.Sess)
+		service.imp.SessionOpen(current.Sess)
 	} else if msg.DtType == Close {
-		service.imp.SessionClose(msg.Sess)
+		service.imp.SessionClose(current.Sess)
 	} else if msg.DtType == ConnClose {
-		service.onConnectClose(msg.Sess.conn)
+		service.onConnectClose(current.Sess.conn)
 	} else if msg.DtType == HeartBeat {
-		service.imp.HeartBeatTimeOut(msg.Sess)
+		service.imp.HeartBeatTimeOut(current.Sess)
 	} else if msg.DtType == Data {
 		service.imp.HandleMessage(current, uint64(msg.MsgID), msg.Msg)
 	} else if msg.DtType == System {
@@ -62,14 +59,14 @@ func (service *Service) handleMsg(current *CurrentContent, msg sessionMessage) {
 	}
 }
 
-func (service *Service) messageThread(current *CurrentContent) int {
+func (service *Service) messageThread(threadIdx int) int {
 	defer service.handlePanic()
 
 	n := 0
 	for i := 0; i < 1024; i++ {
 		select {
-		case msg := <-service.messageQ[current.GoroutineID]:
-			service.handleMsg(current, msg)
+		case msg := <-service.messageQ[threadIdx]:
+			service.handleMsg(msg)
 			n++
 		default:
 			return n
@@ -79,12 +76,11 @@ func (service *Service) messageThread(current *CurrentContent) int {
 }
 
 type sessionMessage struct {
-	Sess   *Session
-	DtType CMDType
-	MsgID  int64
-	Msg    interface{}
-	Err    error
-	peer   net.Addr
+	current *CurrentContent
+	DtType  CMDType
+	MsgID   int64
+	Msg     interface{}
+	Err     error
 }
 
 func (service *Service) Imp() ServiceImp {
@@ -104,24 +100,22 @@ func (service *Service) destroy() {
 		v.(*Connector).Close()
 		return true
 	})
-	for i := 0; i < service.svr.ProcessorThreadsNum; i++ {
+	for i := 0; i < service.ProcessorThreadsNum; i++ {
 		select {
-		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil, nil}:
+		case service.messageQ[i] <- sessionMessage{nil, System, 0, nil, nil}:
 		default:
 		}
 	}
 }
 
 func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{}) error {
-	th := service.getProcessor(sess, msgid, msg)
-	m := sessionMessage{sess, Data, msgid, msg, nil, nil}
-	if sess != nil {
-		m.peer = sess.peer
-	}
+	cur := &CurrentContent{0, sess, sess.peer, nil}
+	m := sessionMessage{cur, Data, msgid, msg, nil}
+	th := service.getProcessor(cur, msgid, msg)
 	select {
 	case service.messageQ[th] <- m:
 	default:
-		return fmt.Errorf("service recv queue is full and the message is droped;service=%s;msgid=%d;", service.Name, msgid)
+		return fmt.Errorf("service recv queue is full and the message is droped;service=%s;msgid=%d", service.Name, msgid)
 	}
 
 	//wakeup logic thread
@@ -132,23 +126,25 @@ func (service *Service) PushRequest(sess *Session, msgid int64, msg interface{})
 	return nil
 }
 
-func (service *Service) getProcessor(sess *Session, msgid int64, msg interface{}) int {
-	cur := &CurrentContent{}
-	if sess != nil {
-		cur = &CurrentContent{0, sess, sess.UserData, sess.peer}
-	}
+func (service *Service) getProcessor(cur *CurrentContent, msgid int64, msg interface{}) int {
 	th := service.imp.HashProcessor(cur, uint64(msgid), msg)
 	if th > 0 {
-		th = th % service.svr.ProcessorThreadsNum
+		th = th % service.ProcessorThreadsNum
 	} else if th == 0 {
 		th = service.threadId
-	} else if sess != nil {
-		t := sess.GetID() % uint64(service.svr.ProcessorThreadsNum)
-		th = int(t)
-	} else { //session is nil
-		th = service.threadId
+	} else if th == -1 {
+		if cur.Sess != nil {
+			th = int(cur.Sess.GetID() % uint64(service.ProcessorThreadsNum))
+		} else { //session is nil
+			th = service.threadId
+		}
 	}
 
+	cur.GoroutineID = th
+
+	if th < 0 || th >= service.ProcessorThreadsNum {
+		th = service.threadId
+	}
 	return th
 }
 
@@ -157,9 +153,10 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 	if lenParsed <= 0 || msgid < 0 {
 		return lenParsed
 	}
-	th := service.getProcessor(sess, msgid, msg)
+	cur := &CurrentContent{0, sess, sess.peer, nil}
+	th := service.getProcessor(cur, msgid, msg)
 	select {
-	case service.messageQ[th] <- sessionMessage{sess, Data, msgid, msg, e, sess.peer}:
+	case service.messageQ[th] <- sessionMessage{cur, Data, msgid, msg, e}:
 	default:
 		sysLog.Error("service recv queue is full and the message is droped;service=%s;msgid=%d;err=%v;", service.Name, msgid, e)
 	}
@@ -174,16 +171,17 @@ func (service *Service) ParseMsg(sess *Session, data []byte) int {
 
 func (service *Service) sessionEvent(sess *Session, cmd CMDType) {
 	th := service.threadId
+	cur := &CurrentContent{th, sess, sess.peer, nil}
 	if cmd == Data {
-		th = service.getProcessor(sess, 0, nil)
+		th = service.getProcessor(cur, 0, nil)
 	} else if cmd == Open {
-		service.handleMsg(&CurrentContent{th, sess, nil, nil}, sessionMessage{sess, cmd, 0, nil, nil, sess.peer})
+		service.handleMsg(sessionMessage{cur, cmd, 0, nil, nil})
 		return
 	}
 
 	to := time.NewTimer(100 * time.Millisecond)
 	select {
-	case service.messageQ[th] <- sessionMessage{sess, cmd, 0, nil, nil, sess.peer}:
+	case service.messageQ[th] <- sessionMessage{cur, cmd, 0, nil, nil}:
 		//wakeup logic thread
 		select {
 		case (*service.netSignal)[th] <- 1:

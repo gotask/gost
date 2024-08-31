@@ -15,7 +15,7 @@ type RpcServerInterface interface {
 	Push(ps *PushProto) error
 }
 
-type RpcServiceInterface interface {
+type RpcClientInterface interface {
 	// RpcCall serviceName funcName funcParams callback(could nil) exception(could nil, func(rspCode int32))
 	// example RpcCall("saas", "Add", 1, 2, func(result int) {}, func(exception int32) {})
 	// example RpcCall("saas1", "Ping")
@@ -25,7 +25,11 @@ type RpcServiceInterface interface {
 	CloseConnector(serviceName string)
 }
 
-type RouterServiceInterface interface {
+type RouterServerInterface interface {
+	ListService(name string) map[string][]string
+}
+
+type RouterClientInterface interface {
 	RpcCall(serviceName, funcName string, params ...interface{}) error
 	RpcCallSync(serviceName, funcName string, params ...interface{}) error
 }

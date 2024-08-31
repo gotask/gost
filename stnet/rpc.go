@@ -43,16 +43,15 @@ type RpcService interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
 	//HashProcessor if processorID == 0, it only uses main thread of the service.
-	//if processorID < 0, it will use hash of session id.
-	HashProcessor(current *CurrentContent) (processorID int)
+	//if processorID == -1, it will use hash of session id.
+	//if processorID == -2, it will use a new goroutine.
+	HashProcessor(current *CurrentContent, funcName string) (processorID int)
 }
 
 type RpcServiceEx interface {
 	Loop()
 	HandleError(current *CurrentContent, err error)
-	//HashProcessor if processorID == 0, it only uses main thread of the service.
-	//if processorID < 0, it will use hash of session id.
-	HashProcessor(current *CurrentContent) (processorID int)
+	HashProcessor(current *CurrentContent, funcName string) (processorID int)
 
 	HandlePush(current *CurrentContent, msg *PushProto)
 }
@@ -67,8 +66,8 @@ func (r *SimpRpcService) Loop() {
 func (r *SimpRpcService) HandleError(current *CurrentContent, err error) {
 	r.imp.HandleError(current, err)
 }
-func (r *SimpRpcService) HashProcessor(c *CurrentContent) (processorID int) {
-	return r.imp.HashProcessor(c)
+func (r *SimpRpcService) HashProcessor(c *CurrentContent, funcName string) (processorID int) {
+	return r.imp.HashProcessor(c, funcName)
 }
 func (r *SimpRpcService) HandlePush(current *CurrentContent, msg *PushProto) {
 	sysLog.Error("HandlePush is null")
@@ -82,7 +81,7 @@ func (r *NullRpcService) Loop() {
 func (r *NullRpcService) HandleError(current *CurrentContent, err error) {
 	sysLog.Error("rpc error: %s", err.Error())
 }
-func (r *NullRpcService) HashProcessor(*CurrentContent) (processorID int) {
+func (r *NullRpcService) HashProcessor(*CurrentContent, string) (processorID int) {
 	return 0
 }
 func (r *NullRpcService) HandlePush(current *CurrentContent, msg *PushProto) {
@@ -151,7 +150,7 @@ func newRpcService(imp RpcService, impEx RpcServiceEx, rpcTimeOutMilli int64) *S
 
 // rpc_call syncORasync remotesession udppeer remotefunction functionparams callback exception
 // rpc_call exception function: func(int32){}
-func (service *ServiceRpc) rpc_call(isSync bool, isRouter bool, sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
+func (service *ServiceRpc) rpc_call(isSync bool, isRouter bool, sess *Session, funcName string, params ...interface{}) error {
 	rpcRequestMetricAdd()
 
 	var rpcReq rpcRequest
@@ -205,9 +204,9 @@ func (service *ServiceRpc) rpc_call(isSync bool, isRouter bool, sess *Session, p
 	service.rpcMutex.Unlock()
 
 	if isRouter {
-		err = service.sendRouterRpcReq(sess, peer, &rpcReq.req)
+		err = service.sendRouterRpcReq(sess, &rpcReq.req)
 	} else {
-		err = service.sendRpcReq(sess, peer, &rpcReq.req)
+		err = service.sendRpcReq(sess, &rpcReq.req)
 	}
 	if err != nil {
 		return err
@@ -247,16 +246,10 @@ func (service *ServiceRpc) rpc_call(isSync bool, isRouter bool, sess *Session, p
 // example rpc.RpcCall(c.Session(), "Add", 1, 2, func(result int) {}, func(exception int32) {})
 // example rpc.RpcCall(c.Session(), "Ping")
 func (service *ServiceRpc) RpcCall(sess *Session, funcName string, params ...interface{}) error {
-	return service.rpc_call(false, false, sess, nil, funcName, params...)
+	return service.rpc_call(false, false, sess, funcName, params...)
 }
 func (service *ServiceRpc) RpcCall_Sync(sess *Session, funcName string, params ...interface{}) error {
-	return service.rpc_call(true, false, sess, nil, funcName, params...)
-}
-func (service *ServiceRpc) UdpRpcCall(sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
-	return service.rpc_call(false, false, sess, peer, funcName, params...)
-}
-func (service *ServiceRpc) UdpRpcCall_Sync(sess *Session, peer net.Addr, funcName string, params ...interface{}) error {
-	return service.rpc_call(true, false, sess, peer, funcName, params...)
+	return service.rpc_call(true, false, sess, funcName, params...)
 }
 
 func (service *ServiceRpc) Init() bool {
@@ -286,19 +279,14 @@ func (service *ServiceRpc) Loop() {
 	service.imp.Loop()
 }
 
-func (service *ServiceRpc) handleRouterRpcReq(current *CurrentContent, req *RouterMsgReq) {
-	r := &ReqProto{}
-	e := Unmarshal(req.RawData, r, 0)
-	if e != nil {
-		rpcRemoteReqMetricAdd()
-		rpcInvalidReqMetricAdd()
+type RouterReqTmp struct {
+	req1 *RouterMsgReq
+	req2 *ReqProto
+}
 
-		sysLog.Error("%s->%s RouterMsgReq.RawData unmarshal failed: %s", req.SrcAddr, req.DstService, e.Error())
-		return
-	}
-
-	rsp := service.handleRpcReq(current, r)
-	sendRouterRsp(current, req, rsp, 0x7)
+func (service *ServiceRpc) handleRouterRpcReq(current *CurrentContent, req *RouterReqTmp) {
+	rsp := service.handleRpcReq(current, req.req2)
+	sendRouterRsp(current, req.req1, rsp, 0x7)
 }
 
 func (service *ServiceRpc) handleRpcReq(current *CurrentContent, req *ReqProto) *RspProto {
@@ -418,9 +406,10 @@ const (
 
 func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, msg interface{}) {
 	if msgID == TyMsgRpcReq { //rpc req
-		rsp := service.handleRpcReq(current, msg.(*ReqProto))
-		if rsp != nil {
-			service.sendRpcRsp(current, rsp)
+		if current.GoroutineID == -2 { // new goroutine
+			go service.sendRpcRsp(current, service.handleRpcReq(current, msg.(*ReqProto)))
+		} else {
+			service.sendRpcRsp(current, service.handleRpcReq(current, msg.(*ReqProto)))
 		}
 	} else if msgID == TyMsgRpcRsp { //rpc rsp
 		service.handleRpcRsp(msg.(*RspProto))
@@ -428,7 +417,11 @@ func (service *ServiceRpc) HandleMessage(current *CurrentContent, msgID uint64, 
 		rpcRecvPushMetricAdd()
 		service.impEx.HandlePush(current, msg.(*PushProto))
 	} else if msgID == TyMsgRouterRpcReq { //router rpc req
-		service.handleRouterRpcReq(current, msg.(*RouterMsgReq))
+		if current.GoroutineID == -2 { // new goroutine
+			go service.handleRouterRpcReq(current, msg.(*RouterReqTmp))
+		} else {
+			service.handleRouterRpcReq(current, msg.(*RouterReqTmp))
+		}
 	} else if msgID == TyMsgRouterRpcRsp { //router rpc rsp
 		service.handleRpcRsp(msg.(*RspProto))
 	} else if msgID == TyMsgRouterPush { //push
@@ -497,7 +490,14 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 				if e != nil {
 					return int(msgLen), 0, nil, e
 				}
-				return int(msgLen), TyMsgRouterRpcReq, req, nil
+
+				r := &ReqProto{}
+				e = Unmarshal(req.RawData, r, 0)
+				if e != nil {
+					return int(msgLen), 0, nil, e
+				}
+
+				return int(msgLen), TyMsgRouterRpcReq, &RouterReqTmp{req, r}, nil
 			}
 		} else { //rsp
 			if flag&0x4 == 0 {
@@ -553,7 +553,22 @@ func (service *ServiceRpc) Unmarshal(sess *Session, data []byte) (lenParsed int,
 }
 
 func (service *ServiceRpc) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
-	return service.imp.HashProcessor(current)
+	funcName := ""
+	if msgID == TyMsgRpcReq { //rpc req
+		funcName = msg.(*ReqProto).FuncName
+	} else if msgID == TyMsgRpcRsp { //rpc rsp
+		funcName = msg.(*RspProto).FuncName
+	} else if msgID == TyMsgPush { //push
+		funcName = "HandlePush"
+	} else if msgID == TyMsgRouterRpcReq { //router rpc req
+		funcName = msg.(*RouterReqTmp).req2.FuncName
+	} else if msgID == TyMsgRouterRpcRsp { //router rpc rsp
+		funcName = msg.(*RspProto).FuncName
+	} else if msgID == TyMsgRouterPush { //push
+		funcName = "HandlePush"
+	}
+
+	return service.imp.HashProcessor(current, funcName)
 }
 
 func (service *ServiceRpc) Push(ps *PushProto) error {
@@ -563,13 +578,13 @@ func (service *ServiceRpc) Push(ps *PushProto) error {
 	}
 	service.base.IterateSession(func(sess *Session) bool {
 		rpcSendPushMetricAdd()
-		sess.Send(buf, nil)
+		sess.Send(buf)
 		return true
 	})
 	return nil
 }
 
-func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req *ReqProto) error {
+func (service *ServiceRpc) sendRpcReq(sess *Session, req *ReqProto) error {
 	if req == nil {
 		return fmt.Errorf("request is nil")
 	}
@@ -578,7 +593,7 @@ func (service *ServiceRpc) sendRpcReq(sess *Session, peer net.Addr, req *ReqProt
 		return e
 	}
 	buf[0] |= 0x2
-	return sess.Send(buf, peer)
+	return sess.Send(buf)
 }
 
 func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp *RspProto) error {
@@ -590,10 +605,10 @@ func (service *ServiceRpc) sendRpcRsp(current *CurrentContent, rsp *RspProto) er
 		return e
 	}
 	buf[0] |= 0x3
-	return current.Sess.Send(buf, current.Peer)
+	return current.Sess.Send(buf)
 }
 
-func (service *ServiceRpc) sendRouterRpcReq(sess *Session, peer net.Addr, req *ReqProto) error {
+func (service *ServiceRpc) sendRouterRpcReq(sess *Session, req *ReqProto) error {
 	if req == nil {
 		return fmt.Errorf("request is nil")
 	}
@@ -628,7 +643,7 @@ func (service *ServiceRpc) sendRouterRpcReq(sess *Session, peer net.Addr, req *R
 	}
 	buf[0] = 0x6
 
-	return sess.Send(buf, peer)
+	return sess.Send(buf)
 }
 
 func sendRouterRsp(current *CurrentContent, req *RouterMsgReq, rsp *RspProto, flag byte) {
@@ -652,7 +667,7 @@ func sendRouterRsp(current *CurrentContent, req *RouterMsgReq, rsp *RspProto, fl
 
 	buf, _ := encodeProtocol(&cmd, 0)
 	buf[0] = flag
-	current.Sess.Send(buf, current.Peer)
+	current.Sess.Send(buf)
 }
 
 // b[0] mark msg's type: 1stBit marks req(0) or rsp（1);2ndBit marks rpc(1) or not(0);
@@ -812,14 +827,14 @@ func (r *RpcClientService) getSession(name string) *Session {
 func (r *RpcClientService) RpcCall(service string, funcName string, params ...interface{}) error {
 	sess := r.getSession(service)
 	if sess == nil {
-		return fmt.Errorf("%s is not found.", service)
+		return fmt.Errorf("%s is not found", service)
 	}
 	return r.rpc.RpcCall(sess, funcName, params...)
 }
 func (r *RpcClientService) RpcCallSync(service string, funcName string, params ...interface{}) error {
 	sess := r.getSession(service)
 	if sess == nil {
-		return fmt.Errorf("%s is not found.", service)
+		return fmt.Errorf("%s is not found", service)
 	}
 	return r.rpc.RpcCall_Sync(sess, funcName, params...)
 }

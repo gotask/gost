@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// This log writer sends output to a file
+// FileLogWriter This log writer sends output to a file
 type FileLogWriter struct {
 	// The opened file
 	filename string

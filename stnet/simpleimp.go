@@ -5,7 +5,6 @@ import (
 	"math/rand"
 )
 
-// ServiceImpBase
 type ServiceBase struct {
 }
 
@@ -38,20 +37,19 @@ func (service *ServiceBase) Unmarshal(sess *Session, data []byte) (lenParsed int
 	return len(data), -1, nil, nil
 }
 
-// processorID is the thread who process this msg;it should between 1-ProcessorThreadsNum.
+// HashProcessor processorID is the thread who process this msg;it should between 1-ProcessorThreadsNum.
 // if processorID == 0, it only uses main thread of the service.
-// if processorID < 0, it will use hash of session id.
+// if processorID == -1, it will use hash of session id.
 func (service *ServiceBase) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return -1
 }
 
-// ServiceImpEcho
 type ServiceEcho struct {
 	ServiceBase
 }
 
 func (service *ServiceEcho) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	sess.Send(data, sess.peer)
+	sess.Send(data)
 	return len(data), -1, nil, nil
 }
 
@@ -75,18 +73,18 @@ func (service *ServiceLoop) Loop() {
 type ServiceProxyS struct {
 	ServiceBase
 	remote   *Service
-	remoteip []string
+	remoteIP []string
 	weight   []int
 }
 
 func (service *ServiceProxyS) SessionOpen(sess *Session) {
-	rip := service.remoteip[0]
+	rip := service.remoteIP[0]
 	ln := len(service.weight)
 	if ln > 1 {
 		r := rand.Int() % service.weight[ln-1]
 		for i := 0; i < ln; i++ {
 			if r < service.weight[i] {
-				rip = service.remoteip[i]
+				rip = service.remoteIP[i]
 				break
 			}
 		}
@@ -117,14 +115,13 @@ type ServiceProxyC struct {
 }
 
 func (service *ServiceProxyC) Unmarshal(sess *Session, data []byte) (lenParsed int, msgID int64, msg interface{}, err error) {
-	sess.UserData.(*Session).Send(data, sess.peer)
+	sess.UserData.(*Session).Send(data)
 	return len(data), -1, nil, nil
 }
 func (service *ServiceProxyC) HashProcessor(current *CurrentContent, msgID uint64, msg interface{}) (processorID int) {
 	return int(current.Sess.GetID())
 }
 
-// ServiceJson
 type ServiceJson struct {
 	ServiceBase
 	imp JsonService
@@ -190,5 +187,5 @@ func (js *JsonServiceImp) SendJsonCmd(sess *Session, msgID uint64, msg []byte) e
 	if e != nil {
 		return e
 	}
-	return sess.Send(buf, nil)
+	return sess.Send(buf)
 }

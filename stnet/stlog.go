@@ -1,8 +1,3 @@
-// a simple log lib
-// some code from code.google.com/p/log4go
-// console log is open, file and sock log is close by default
-// you can use functin SetxxxLevel open or close the log pattern
-// it will only print the log whose level is higher than the pattern's level
 package stnet
 
 import (
@@ -34,7 +29,7 @@ func (l Level) String() string {
 	if l < 0 || int(l) > len(levelStrings) {
 		return "UNKNOWN"
 	}
-	return levelStrings[int(l)]
+	return levelStrings[l]
 }
 
 /****** format ******/
@@ -200,7 +195,7 @@ func (log *Logger) SetTermLevel(lvl Level) {
 	log.term = lvl
 }
 
-// 等级 文件名 log文件最大值 是否每天滚动 最大备份文件个数
+// SetFileLevel 等级 文件名 log文件最大值 是否每天滚动 最大备份文件个数
 // param: maxsize int (the maxsize of single log file), daily int(is rotate daily), maxbackup int(max count of the backup log files)
 func (log *Logger) SetFileLevel(lvl Level, fname string, param ...int) {
 	log.file = lvl

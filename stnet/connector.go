@@ -153,7 +153,7 @@ func (c *Connector) GetID() uint64 {
 
 func (c *Connector) Send(data []byte) error {
 	c.NotifyReconn()
-	return c.sess.Send(data, nil)
+	return c.sess.Send(data)
 }
 
 func (c *Connector) NotifyReconn() {

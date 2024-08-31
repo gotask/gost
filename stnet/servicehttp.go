@@ -38,13 +38,13 @@ func (w *httpWriter) Write(b []byte) (int, error) {
 		}
 		w.buf.WriteString("\r\n") //http head end
 		w.buf.Write(b)            //send header and body
-		e := w.current.Sess.Send(w.buf.Bytes(), nil)
+		e := w.current.Sess.Send(w.buf.Bytes())
 		w.buf.Reset()
 		return len(b), e
 	}
 
 	//send body
-	e := w.current.Sess.Send(b, nil)
+	e := w.current.Sess.Send(b)
 	return len(b), e
 }
 func (w *httpWriter) WriteHeader(statusCode int) {
@@ -83,7 +83,6 @@ type HttpService interface {
 	HashProcessor(current *CurrentContent, req *http.Request) (processorID int)
 }
 
-// ServiceHttp
 type ServiceHttp struct {
 	ServiceBase
 	imp HttpService
@@ -139,7 +138,7 @@ func (service *ServiceHttp) Unmarshal(sess *Session, data []byte) (lenParsed int
 	if len(cl) > 0 { //fixed length
 		n, err := strconv.ParseUint(cl, 10, 63)
 		if err != nil {
-			return len(data), 0, nil, fmt.Errorf("bad Content-Length %d", cl)
+			return len(data), 0, nil, fmt.Errorf("bad Content-Length %s", cl)
 		}
 		dataLen += int(n)
 		if len(data) < dataLen {
@@ -243,7 +242,7 @@ func appendSorted(es []muxEntry, e muxEntry) []muxEntry {
 	if i == n {
 		return append(es, e)
 	}
-	// we now know that i points at where we want to insert
+	// we now know that 'i' points at where we want to insert
 	es = append(es, muxEntry{}) // try to grow the slice in place, any entry works.
 	copy(es[i+1:], es[i:])      // Move shorter entries down
 	es[i] = e

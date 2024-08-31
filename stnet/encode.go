@@ -23,7 +23,7 @@ func Marshal(m interface{}, encodeType int) ([]byte, error) {
 func Unmarshal(data []byte, m interface{}, encodeType int) error {
 	rv := reflect.ValueOf(m)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())
+		return fmt.Errorf("Unmarshal need is ptr, but this is %s", rv.Kind())
 	}
 
 	if encodeType == EncodeTyepSpb {
@@ -41,7 +41,7 @@ func RpcMarshal(spb *Spb, tag uint32, i interface{}) error {
 func RpcUnmarshal(spb *Spb, tag uint32, i interface{}) error {
 	rv := reflect.ValueOf(i)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("Unmarshal need is ptr,but this is %s", rv.Kind())
+		return fmt.Errorf("Unmarshal need is ptr, but this is %s", rv.Kind())
 	}
 	return spb.unpack(rv, true)
 }
