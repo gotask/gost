@@ -35,12 +35,23 @@ func (config *Config) Save() error {
 	for _, key := range config.keys {
 		if val, ok := config.values[key]; ok {
 			if com, ok := config.commentValues[key]; ok && com != "" {
+				f.WriteString("#")
 				f.WriteString(com)
 				f.WriteString("\n")
 			}
 			f.WriteString(key)
 			f.WriteString(" = ")
+
+			nv := strings.TrimSpace(val)
+			isSpace := len(nv) != len(val)
+			if isSpace {
+				f.WriteString("\"")
+			}
 			f.WriteString(val)
+			if isSpace {
+				f.WriteString("\"")
+			}
+
 			f.WriteString("\n")
 		}
 	}
@@ -49,6 +60,7 @@ func (config *Config) Save() error {
 		if sec, ok := config.sections[seckey]; ok {
 			f.WriteString("\n")
 			if sec.commentSection != "" {
+				f.WriteString("#")
 				f.WriteString(sec.commentSection)
 				f.WriteString("\n")
 			}
@@ -58,12 +70,23 @@ func (config *Config) Save() error {
 			for _, key := range sec.keys {
 				if val, ok := sec.values[key]; ok {
 					if com, ok := sec.commentValues[key]; ok && com != "" {
+						f.WriteString("#")
 						f.WriteString(com)
 						f.WriteString("\n")
 					}
 					f.WriteString(key)
 					f.WriteString(" = ")
+
+					nv := strings.TrimSpace(val)
+					isSpace := len(nv) != len(val)
+					if isSpace {
+						f.WriteString("\"")
+					}
 					f.WriteString(val)
+					if isSpace {
+						f.WriteString("\"")
+					}
+
 					f.WriteString("\n")
 				}
 			}
@@ -75,9 +98,6 @@ func (config *Config) Save() error {
 }
 
 func (config *configSection) set(key, val, comment string) {
-	if comment != "" {
-		comment = "#" + comment
-	}
 	if _, ok := config.values[key]; ok {
 		config.values[key] = val
 		if comment != "" {
@@ -85,7 +105,9 @@ func (config *configSection) set(key, val, comment string) {
 		}
 	} else {
 		config.values[key] = val
-		config.commentValues[key] = comment
+		if comment != "" {
+			config.commentValues[key] = comment
+		}
 		config.keys = append(config.keys, key)
 	}
 }
@@ -95,7 +117,9 @@ func (config *Config) Set(key, val, comment string) {
 }
 
 func (config *Config) SectionSet(section, key, val, comment string) {
-	if sec, ok := config.sections[section]; ok {
+	if section == "" {
+		config.set(key, val, comment)
+	} else if sec, ok := config.sections[section]; ok {
 		sec.set(key, val, comment)
 	} else {
 		sec = new(configSection)
@@ -104,12 +128,38 @@ func (config *Config) SectionSet(section, key, val, comment string) {
 		sec.values[key] = val
 		sec.commentValues = make(map[string]string)
 		if comment != "" {
-			sec.commentValues[key] = "#" + comment
+			sec.commentValues[key] = comment
 		}
 		sec.keys = make([]string, 1)
 		sec.keys[0] = key
 		config.sections[section] = sec
 		config.sectionkeys = append(config.sectionkeys, section)
+	}
+}
+
+func (config *Config) DelKey(key string) {
+	delete(config.values, key)
+	delete(config.commentValues, key)
+	for i, v := range config.keys {
+		if v == key {
+			config.keys = append(config.keys[:i], config.keys[i+1:]...)
+			break
+		}
+	}
+}
+
+func (config *Config) DelSectionKey(section, key string) {
+	if section == "" {
+		config.DelKey(key)
+	} else if sec, ok := config.sections[section]; ok {
+		delete(sec.values, key)
+		delete(sec.commentValues, key)
+		for i, v := range sec.keys {
+			if v == key {
+				sec.keys = append(sec.keys[:i], sec.keys[i+1:]...)
+				break
+			}
+		}
 	}
 }
 
@@ -191,9 +241,57 @@ func trimSpaceAndComment(sLine string) (line, comment string) {
 	lineRune := []rune(sLine)
 	sT := string(lineRune[0:1])
 	if sT == "#" || sT == ";" {
-		return "", sLine
+		return "", strings.TrimSpace(string(lineRune[1:]))
 	}
-	return sLine, ""
+
+	line = sLine
+	if sT == "[" {
+		idx := strings.LastIndex(sLine, ";")
+		if idx == -1 {
+			idx = strings.LastIndex(sLine, "#")
+		}
+		if idx > 0 {
+			comment = sLine[idx+1:]
+			comment = strings.TrimSpace(comment)
+			line = sLine[0:idx]
+			line = strings.TrimSpace(line)
+		}
+	}
+	return line, comment
+}
+
+func trimQuote(value string) string {
+	if len(value) < 2 {
+		return value
+	}
+	if value[0] == '"' && value[len(value)-1] == '"' && value[len(value)-2] != '\\' {
+		value = value[1 : len(value)-1]
+	} else if value[0] == '\'' && value[len(value)-1] == '\'' && value[len(value)-2] != '\\' {
+		value = value[1 : len(value)-1]
+	}
+	return value
+}
+func trimValue(value string) (line, comment string) {
+	value = strings.TrimSpace(value)
+	nv := trimQuote(value)
+	if len(nv) != len(value) {
+		return nv, ""
+	}
+
+	idx := strings.LastIndex(value, ";")
+	if idx == -1 {
+		idx = strings.LastIndex(value, "#")
+	}
+	if idx > 0 {
+		comment = value[idx+1:]
+		comment = strings.TrimSpace(comment)
+		value = value[0:idx]
+		value = strings.TrimSpace(value)
+
+		value = trimQuote(value)
+	}
+
+	return value, comment
 }
 
 func (config *Config) readIniFile(input io.Reader) error {
@@ -220,10 +318,10 @@ func (config *Config) readIniFile(input io.Reader) error {
 		}
 		var curComment string
 		curLine, curComment = trimSpaceAndComment(curLine)
+		if curComment != "" {
+			comment += " " + curComment
+		}
 		if len(curLine) == 0 {
-			if curComment != "" {
-				comment += curComment
-			}
 			continue
 		}
 
@@ -257,7 +355,12 @@ func (config *Config) readIniFile(input io.Reader) error {
 		}
 
 		key := strings.TrimSpace(curLine[0:index])
-		value := strings.Trim(strings.TrimSpace(curLine[index+1:]), "\"'")
+		value := strings.TrimSpace(curLine[index+1:])
+		nv, co := trimValue(value)
+		value = nv
+		if len(co) > 0 {
+			comment += " " + co
+		}
 
 		if currentSection != nil {
 			currentSection.values[key] = value

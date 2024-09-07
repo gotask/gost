@@ -9,11 +9,12 @@ import (
 )
 
 var (
-	errNoEnoughData = errors.New("NoEnoughData")
-	errOverflow     = errors.New("integer overflow")
-	errInvalidType  = errors.New("invalid type")
-	errStructEnd    = errors.New("struct end")
-	errNeedPtr      = errors.New("ptr is needed")
+	errNoEnoughData       = errors.New("NoEnoughData")
+	errOverflow           = errors.New("integer overflow")
+	errInvalidType        = errors.New("invalid type")
+	errStructEnd          = errors.New("struct end")
+	errNeedPtr            = errors.New("ptr is needed")
+	errFiledTypeUnmatched = errors.New("field type unmatched")
 )
 
 //`tag:"0" require:"true"`
@@ -119,31 +120,35 @@ func (spb *Spb) packStruct(tag uint32, x interface{}, packHead bool) error {
 		return errInvalidType
 	}
 	spb.packHeader(tag, SpbPackDataType_StructBegin)
-	for i := 0; i < refVal.NumField(); i++ {
-		fld := refVal.Field(i)
-		if !fld.CanInterface() {
-			continue
-		}
 
-		iTg := i
-		tg := refVal.Type().Field(i).Tag.Get("tag")
-		if tg != "" {
-			itg, er := strconv.Atoi(tg)
-			if er == nil {
-				iTg = itg
+	if !refVal.IsZero() {
+		for i := 0; i < refVal.NumField(); i++ {
+			fld := refVal.Field(i)
+			if !fld.CanInterface() {
+				continue
+			}
+
+			iTg := i
+			tg := refVal.Type().Field(i).Tag.Get("tag")
+			if tg != "" {
+				itg, er := strconv.Atoi(tg)
+				if er == nil {
+					iTg = itg
+				}
+			}
+			req := refVal.Type().Field(i).Tag.Get("require")
+			require := false
+			if req == "true" {
+				require = true
+			}
+
+			err := spb.pack(uint32(iTg), fld.Interface(), true, require)
+			if err != nil {
+				return err
 			}
 		}
-		req := refVal.Type().Field(i).Tag.Get("require")
-		require := false
-		if req == "true" {
-			require = true
-		}
-
-		err := spb.pack(uint32(iTg), fld.Interface(), true, require)
-		if err != nil {
-			return err
-		}
 	}
+
 	spb.packHeader(0, SpbPackDataType_StructEnd)
 	return nil
 }
@@ -483,7 +488,7 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 	}
 
 	var valField reflect.Value
-	if !first && x.Type().Kind() == reflect.Struct {
+	if !first && typ != SpbPackDataType_StructEnd && x.Type().Kind() == reflect.Struct {
 		isTag := false
 		for i := 0; i < x.NumField(); i++ {
 			tg := x.Type().Field(i).Tag.Get("tag")
@@ -503,8 +508,14 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				tg := x.Type().Field(t).Tag.Get("tag")
 				if tg == "" {
 					valField = x.Field(t)
+					isTag = true
 				}
 			}
+		}
+
+		if !isTag { //not found field
+			spb.skipField(typ)
+			return nil
 		}
 	}
 
@@ -523,6 +534,8 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 					x.SetInt(int64(v))
 				} else if CanSetBool(x) {
 					x.SetBool(v > 0)
+				} else {
+					return errFiledTypeUnmatched
 				}
 			} else {
 				if CanSetUint(valField) {
@@ -531,6 +544,8 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 					valField.SetInt(int64(v))
 				} else if CanSetBool(valField) {
 					valField.SetBool(v > 0)
+				} else {
+					return errFiledTypeUnmatched
 				}
 			}
 		}
@@ -545,9 +560,15 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 			if first {
 				if CanSetInt(x) {
 					x.SetInt(vv)
+				} else {
+					return errFiledTypeUnmatched
 				}
-			} else if CanSetInt(valField) {
-				valField.SetInt(vv)
+			} else {
+				if CanSetInt(valField) {
+					valField.SetInt(vv)
+				} else {
+					return errFiledTypeUnmatched
+				}
 			}
 		}
 	case SpbPackDataType_Float, SpbPackDataType_Double:
@@ -560,9 +581,15 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 			if first {
 				if CanSetFloat(x) {
 					x.SetFloat(f)
+				} else {
+					return errFiledTypeUnmatched
 				}
-			} else if CanSetFloat(valField) {
-				valField.SetFloat(f)
+			} else {
+				if CanSetFloat(valField) {
+					valField.SetFloat(f)
+				} else {
+					return errFiledTypeUnmatched
+				}
 			}
 		}
 	case SpbPackDataType_String:
@@ -579,9 +606,15 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 			if first {
 				if x.Kind() == reflect.String {
 					x.SetString(str)
+				} else {
+					return errFiledTypeUnmatched
 				}
-			} else if valField.Kind() == reflect.String {
-				valField.SetString(str)
+			} else {
+				if valField.Kind() == reflect.String {
+					valField.SetString(str)
+				} else {
+					return errFiledTypeUnmatched
+				}
 			}
 		}
 	case SpbPackDataType_Vector:
@@ -595,10 +628,16 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				if x.Kind() == reflect.Slice && x.CanSet() {
 					x.SetLen(0)
 					vecType = x.Type().Elem()
+				} else {
+					return errFiledTypeUnmatched
 				}
-			} else if valField.Kind() == reflect.Slice && valField.CanSet() {
-				valField.SetLen(0)
-				vecType = valField.Type().Elem()
+			} else {
+				if valField.Kind() == reflect.Slice && valField.CanSet() {
+					valField.SetLen(0)
+					vecType = valField.Type().Elem()
+				} else {
+					return errFiledTypeUnmatched
+				}
 			}
 
 			if vecType == nil {
@@ -647,10 +686,16 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				if x.Kind() == reflect.Map && x.CanSet() {
 					keyType = x.Type().Key()
 					valType = x.Type().Elem()
+				} else {
+					return errFiledTypeUnmatched
 				}
-			} else if valField.Kind() == reflect.Map && valField.CanSet() {
-				keyType = valField.Type().Key()
-				valType = valField.Type().Elem()
+			} else {
+				if valField.Kind() == reflect.Map && valField.CanSet() {
+					keyType = valField.Type().Key()
+					valType = valField.Type().Elem()
+				} else {
+					return errFiledTypeUnmatched
+				}
 			}
 
 			if keyType == nil {
@@ -706,8 +751,7 @@ func (spb *Spb) unpack(x reflect.Value, first bool) error {
 				stVal = valField
 			}
 			if stVal.Kind() != reflect.Struct {
-				spb.skipToStructEnd()
-				return nil
+				return errFiledTypeUnmatched
 			}
 			for {
 				err := spb.unpack(stVal, false)
