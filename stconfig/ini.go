@@ -26,6 +26,11 @@ func LoadINI(path string) (*Config, error) {
 	return cfg, nil
 }
 
+func isNeedQuote(val string) bool {
+	nv := strings.TrimSpace(val)
+	isSpace := len(nv) != len(val)
+	return isSpace || strings.HasSuffix(val, "\\")
+}
 func (config *Config) Save() error {
 	f, err := os.Create(config.path)
 	if err != nil {
@@ -42,8 +47,7 @@ func (config *Config) Save() error {
 			f.WriteString(key)
 			f.WriteString(" = ")
 
-			nv := strings.TrimSpace(val)
-			isSpace := len(nv) != len(val)
+			isSpace := isNeedQuote(val)
 			if isSpace {
 				f.WriteString("\"")
 			}
@@ -77,8 +81,7 @@ func (config *Config) Save() error {
 					f.WriteString(key)
 					f.WriteString(" = ")
 
-					nv := strings.TrimSpace(val)
-					isSpace := len(nv) != len(val)
+					isSpace := isNeedQuote(val)
 					if isSpace {
 						f.WriteString("\"")
 					}
@@ -278,9 +281,10 @@ func trimValue(value string) (line, comment string) {
 		return nv, ""
 	}
 
-	idx := strings.LastIndex(value, ";")
+	//ignore '#;' in kv line
+	/*idx := strings.LastIndex(value, "#")
 	if idx == -1 {
-		idx = strings.LastIndex(value, "#")
+		idx = strings.LastIndex(value, ";")
 	}
 	if idx > 0 {
 		comment = value[idx+1:]
@@ -289,7 +293,7 @@ func trimValue(value string) (line, comment string) {
 		value = strings.TrimSpace(value)
 
 		value = trimQuote(value)
-	}
+	}*/
 
 	return value, comment
 }
@@ -305,6 +309,7 @@ func (config *Config) readIniFile(input io.Reader) error {
 	var comment string
 	var currentSection *configSection
 	scanner := bufio.NewScanner(input)
+	lastLine := ""
 	for scanner.Scan() {
 		ln++
 		curLine := scanner.Text()
@@ -323,6 +328,15 @@ func (config *Config) readIniFile(input io.Reader) error {
 		}
 		if len(curLine) == 0 {
 			continue
+		}
+		curLine = strings.TrimSpace(curLine)
+		if strings.HasSuffix(curLine, "\\") {
+			lastLine += curLine[:len(curLine)-1]
+			continue
+		}
+		if lastLine != "" {
+			curLine = lastLine + curLine
+			lastLine = ""
 		}
 
 		if strings.HasPrefix(curLine, "[") {

@@ -55,7 +55,7 @@ type routerConnPData struct {
 }
 type ServiceRouter interface {
 	Init() bool
-	IsValidToken(appid string, token string) bool
+	IsValidToken(appid string, serv map[string]string, token string) bool
 	Loop()
 }
 
@@ -107,7 +107,7 @@ func (service *RouterService) HandleMessage(current *CurrentContent, msgID uint6
 func (service *RouterService) SessionOpen(sess *Session) {
 	if !sess.isConn {
 		routerSessionOpenMetricAdd()
-		sess.UserData = &routerSessPData{IsValid: service.imp.IsValidToken("", "")}
+		sess.UserData = &routerSessPData{IsValid: service.imp.IsValidToken("", nil, "")}
 	} else {
 		routerConnectOpenMetricAdd()
 	}
@@ -209,7 +209,7 @@ func (service *RouterService) Unmarshal(sess *Session, data []byte) (lenParsed i
 		if e != nil {
 			return int(msgLen), 0, nil, e
 		}
-		if !service.imp.IsValidToken(reg.AppID, reg.Token) {
+		if !service.imp.IsValidToken(reg.AppID, reg.ServiceAddr, reg.Token) {
 			return int(msgLen), 0, nil, fmt.Errorf("register token is invalid: %s", reg.Token)
 		}
 		if sess.UserData.(*routerSessPData).IsValid {

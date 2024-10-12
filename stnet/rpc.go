@@ -137,6 +137,10 @@ func newRpcService(imp RpcService, impEx RpcServiceEx, rpcTimeOutMilli int64) *S
 	t := reflect.TypeOf(imp)
 	for i := 0; i < t.NumMethod(); i++ {
 		m := t.Method(i)
+		ch := m.Name[0]
+		if ch >= 'a' && ch <= 'z' {
+			continue
+		}
 		svr.methods[m.Name] = m
 	}
 

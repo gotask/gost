@@ -168,7 +168,7 @@ func (svr *Server) AddRouterClientEx(routerAddr []string, appid, token string, r
 	return rc
 }
 
-// RegisterToRouter localServiceAddr: local's service ip:port,register only once;
+// RegisterToRouter localServiceAddr: local's service [name]ip:port,register only once;
 func (svr *Server) RegisterToRouter(routerAddr []string, localServiceAddr map[string]string, appid, token string, rpcTimeOutMilli int64, threadId int) RouterClientInterface {
 	r := newServiceRpc(&NullRpcService{}, rpcTimeOutMilli)
 	rc := newRouterClient(r, &RouterRegister{appid, token, localServiceAddr}, routerAddr)

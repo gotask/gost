@@ -33,7 +33,9 @@ func (w *httpWriter) Write(b []byte) (int, error) {
 	}
 
 	if w.buf.Len() > 0 {
-		if len(w.header) == 0 {
+		_, ok1 := w.header["Transfer-Encoding"]
+		_, ok2 := w.header["Content-Length"]
+		if !ok1 && !ok2 {
 			fmt.Fprintf(&w.buf, "%s: %d\r\n", "Content-Length", len(b))
 		}
 		w.buf.WriteString("\r\n") //http head end
@@ -282,9 +284,16 @@ func (h *HttpHandler) handler(host, path string) (h1 http.Handler, pattern strin
 		h1, pattern = h.match(path)
 	}
 	if h1 == nil {
-		h1, pattern = http.NotFoundHandler(), ""
+		h1, pattern = http.HandlerFunc(NotFound), ""
 	}
 	return
+}
+
+func NotFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("404 page not found"))
 }
 
 // ServeHTTP dispatches the request to the handler whose
