@@ -331,7 +331,7 @@ func (s *Session) dorecv() {
 			n, err = s.socket.Read(msgbuf)
 		}
 		if err != nil || n == 0 {
-			sysLog.Error("session recv error: %s,n: %d", err.Error(), n)
+			sysLog.System("session recv error: %s,n: %d", err.Error(), n)
 			//defer close
 			return
 		}
@@ -420,7 +420,7 @@ func (s *Session) dohand() {
 				}
 			} else {
 				s.socket.Close()
-				sysLog.Error("parseLen < 0, parseLen: %d, local addr: %s", parseLen, s.socket.LocalAddr())
+				sysLog.System("parseLen < 0, parseLen: %d, local addr: %s", parseLen, s.socket.LocalAddr())
 			}
 		}
 	}

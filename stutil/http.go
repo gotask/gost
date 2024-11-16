@@ -108,12 +108,12 @@ func (req *HttpRequest) FormFile(params map[string]string, nameField, fileName s
 	return req, nil
 }
 
-func (req *HttpRequest) FormJson(s string) *HttpRequest {
+func (req *HttpRequest) FormJson(b []byte) *HttpRequest {
 	req.Header("Content-Type", HTTPJSONContentType)
-	if len(s) == 0 {
+	if len(b) == 0 {
 		req.binData = nil
 	} else {
-		req.binData = []byte(s)
+		req.binData = b
 	}
 
 	return req
